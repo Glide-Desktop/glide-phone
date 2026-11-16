@@ -13,6 +13,50 @@ import org.json.JSONObject
  * MediaSessions, available because the app already holds notification-listener access.
  */
 internal object MediaControl {
+    private val watched = java.util.concurrent.ConcurrentHashMap<android.media.session.MediaSession.Token, MediaController.Callback>()
+    @Volatile private var sessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+
+    /**
+     * Push player-list and now-playing changes to connected devices as they happen, like
+     * KDE Connect's mprisreceiver. Safe to call repeatedly; it only registers once, and
+     * silently does nothing until notification access has been granted.
+     */
+    fun start(context: Context, emit: (String) -> Unit) {
+        if (sessionsListener != null) return
+        val app = context.applicationContext
+        val manager = app.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+        val component = ComponentName(app, GlideNotificationListener::class.java)
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        fun attach(list: List<MediaController>) {
+            val live = list.map { it.sessionToken }.toSet()
+            watched.keys.filterNot { it in live }.forEach { watched.remove(it) }
+            list.forEach { controller ->
+                if (watched.containsKey(controller.sessionToken)) return@forEach
+                val callback = object : MediaController.Callback() {
+                    override fun onPlaybackStateChanged(state: PlaybackState?) { push() }
+                    override fun onMetadataChanged(metadata: android.media.MediaMetadata?) { push() }
+                    private fun push() { runCatching { statePacket(app, label(app, controller))?.let(emit) } }
+                }
+                watched[controller.sessionToken] = callback
+                runCatching { controller.registerCallback(callback, handler) }
+            }
+        }
+        val listener = MediaSessionManager.OnActiveSessionsChangedListener { list ->
+            attach(list.orEmpty())
+            runCatching { emit(playerListPacket(app)) }
+        }
+        handler.post {
+            if (sessionsListener != null) return@post
+            try {
+                manager.addOnActiveSessionsChangedListener(listener, component, handler)
+                sessionsListener = listener
+                attach(manager.getActiveSessions(component))
+            } catch (_: SecurityException) {
+                // Notification access not granted yet; a later call will try again.
+            }
+        }
+    }
+
     private fun controllers(context: Context): List<MediaController> {
         val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return emptyList()
         val component = ComponentName(context, GlideNotificationListener::class.java)

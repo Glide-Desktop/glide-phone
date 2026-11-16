@@ -500,6 +500,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     /** Initial state exchange right after a trusted connection comes up. */
     private fun greetPeer(connection: TrustedConnection) {
+        runCatching { MediaControl.start(app) { packet -> broadcastPacket(packet) } }
         enqueue {
             val features = SetupPreferences(app).selectedFeatures()
             connection.send(ProtocolPackets.runCommandRequestList())

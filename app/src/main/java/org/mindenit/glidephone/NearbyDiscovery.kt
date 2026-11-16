@@ -30,6 +30,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
     private var udpSocket: DatagramSocket? = null
     private var receiverThread: Thread? = null
     private var resolving = false
+    private val nameResolveTried = mutableSetOf<String>()
 
     internal data class Candidate(
         val id: String,
@@ -45,6 +46,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
         if (running.getAndSet(true)) return
         services.clear()
         candidates.clear()
+        nameResolveTried.clear()
 
         try {
             multicastLock = wifi.createMulticastLock("glide-discovery").apply {
@@ -72,6 +74,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
         if (socket != null) {
             // Receiver thread: listens on UDP 1716 for KDE Connect identity packets
             receiverThread = Thread({
+                val selfId = runCatching { LocalIdentity().loadOrCreate().id }.getOrNull()
                 val buffer = ByteArray(8192)
                 while (running.get() && !socket.isClosed) {
                     try {
@@ -79,7 +82,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                         socket.receive(packet)
                         val text = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
                         val peer = IdentityPacket.decode(text)
-                        if (peer != null && (packet.address.isSiteLocalAddress || packet.address.isLinkLocalAddress) && (peer.tcpPort == null || peer.tcpPort in 1716..1764)) {
+                        if (peer != null && peer.id != selfId && (packet.address.isSiteLocalAddress || packet.address.isLinkLocalAddress) && (peer.tcpPort == null || peer.tcpPort in 1716..1764)) {
                             val host = packet.address.hostAddress ?: ""
                             val port = peer.tcpPort ?: 1716
                             val candidate = Candidate(peer.id, peer.name, host, port, peer.version)
@@ -106,6 +109,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                 if (id.matches(Regex("^[a-zA-Z0-9_-]{32,38}$"))) {
                     services[id] = serviceInfo
                     postUpdate(active = true, failed = false)
+                    resolveNames()
                 }
             }
             override fun onServiceLost(serviceInfo: NsdServiceInfo) = post(this) {
@@ -139,8 +143,17 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
         postUpdate(active = true, failed = false)
     }
 
+    /** Resolve discovered NSD services in the background so their names can be shown. */
+    private fun resolveNames() {
+        if (!running.get() || resolving) return
+        val next = services.keys.firstOrNull { !candidates.containsKey(it) && nameResolveTried.add(it) } ?: return
+        resolve(next) { resolveNames() }
+    }
+
+    fun resolve(id: String, onResult: (Candidate?) -> Unit) = resolve(id, 0, onResult)
+
     @Suppress("DEPRECATION")
-    fun resolve(id: String, onResult: (Candidate?) -> Unit) {
+    private fun resolve(id: String, attempt: Int, onResult: (Candidate?) -> Unit) {
         val cached = candidates[id]
         if (cached != null) {
             handler.post { onResult(cached) }
@@ -158,7 +171,9 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
             return
         }
         if (resolving) {
-            handler.post { onResult(null) }
+            // Another resolve (usually a background name lookup) is in flight: wait for it.
+            if (attempt < 20) handler.postDelayed({ resolve(id, attempt + 1, onResult) }, 250)
+            else handler.post { onResult(null) }
             return
         }
         resolving = true
@@ -190,7 +205,10 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                             Candidate(id, name?.takeIf { it.isNotBlank() } ?: "Пристрій поблизу",
                                 address.hostAddress.orEmpty(), serviceInfo.port, version)
                         } else null
-                        if (candidate != null) candidates[id] = candidate
+                        if (candidate != null) {
+                            candidates[id] = candidate
+                            postUpdate(active = true, failed = false)
+                        }
                         onResult(candidate)
                     }
                 }

@@ -64,8 +64,10 @@ internal object SmsProvider {
     fun send(context: Context, address: String, body: String): Boolean {
         if (!hasSendPermission(context) || address.isBlank() || body.isBlank()) return false
         return runCatching {
-            val sms = context.getSystemService(android.telephony.SmsManager::class.java)
-            sms.sendTextMessage(address, null, body, null, null)
+            @Suppress("DEPRECATION")
+            val sms = if (android.os.Build.VERSION.SDK_INT >= 31) context.getSystemService(android.telephony.SmsManager::class.java)
+            else android.telephony.SmsManager.getDefault()
+            sms.sendMultipartTextMessage(address, null, sms.divideMessage(body), null, null)
             true
         }.getOrDefault(false)
     }

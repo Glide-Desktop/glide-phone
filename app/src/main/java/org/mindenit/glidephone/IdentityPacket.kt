@@ -92,6 +92,7 @@ internal object IdentityPacket {
     /** Packet types this phone may send. */
     val OUTGOING = listOf(
         ProtocolPackets.TYPE_NOTIFICATION,
+        ProtocolPackets.TYPE_NOTIFICATION_REQUEST,
         ProtocolPackets.TYPE_BATTERY,
         ProtocolPackets.TYPE_CLIPBOARD,
         ProtocolPackets.TYPE_CLIPBOARD_CONNECT,

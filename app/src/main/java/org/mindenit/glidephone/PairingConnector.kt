@@ -487,6 +487,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             connection.send(ProtocolPackets.runCommandRequestList())
             connection.send(ProtocolPackets.mprisRequest(JSONObject().put("requestPlayerList", true)))
             connection.send(ProtocolPackets.systemVolumeRequest(JSONObject().put("requestSinks", true)))
+            // Ask the computer for its current notifications (receivenotifications plugin).
+            connection.send(JSONObject().put("id", System.currentTimeMillis())
+                .put("type", ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
+                .put("body", JSONObject().put("request", true)).toString() + "\n")
             runCatching { ConnectivityReporter.reportPacket(app)?.let { connection.send(it) } }
             runCatching { connection.send(MediaControl.playerListPacket(app)) }
             runCatching { MediaControl.statePacket(app)?.let { connection.send(it) } }
@@ -556,7 +560,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                         peerId, nid,
                         body.optString("appName", peerName),
                         body.optString("title"),
-                        body.optString("text"),
+                        // Desktops may only fill "ticker"; KDE Connect displays that field.
+                        body.optString("text").ifEmpty { body.optString("ticker") },
                         body.optBoolean("isCancel", false)
                     ))
                 }

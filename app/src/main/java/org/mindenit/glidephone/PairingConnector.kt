@@ -581,7 +581,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION -> {
                 val thread = body.opt("threadID")?.toString().orEmpty()
                 if (thread.isNotBlank()) {
-                    sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversation(app, thread)))
+                    sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversation(
+                        app, thread, body.optLong("rangeStartTimestamp", -1), body.optLong("numberToRequest", -1)
+                    )))
                 }
             }
             ProtocolPackets.TYPE_SMS_REQUEST -> {

@@ -43,7 +43,7 @@ internal object SmsProvider {
     }
 
     /** All messages of one conversation (newest first). */
-    fun conversation(context: Context, threadId: String): JSONArray {
+    fun conversation(context: Context, threadId: String, rangeStartTimestamp: Long = -1, numberToRequest: Long = -1): JSONArray {
         val messages = JSONArray()
         if (!hasReadPermission(context)) return messages
         runCatching {
@@ -51,9 +51,12 @@ internal object SmsProvider {
                 Telephony.Sms.CONTENT_URI,
                 arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID, Telephony.Sms.ADDRESS,
                     Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.READ, Telephony.Sms.TYPE),
-                "${Telephony.Sms.THREAD_ID} = ?", arrayOf(threadId), "${Telephony.Sms.DATE} DESC"
+                if (rangeStartTimestamp >= 0) "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.DATE} <= ?" else "${Telephony.Sms.THREAD_ID} = ?",
+                if (rangeStartTimestamp >= 0) arrayOf(threadId, rangeStartTimestamp.toString()) else arrayOf(threadId),
+                "${Telephony.Sms.DATE} DESC"
             )?.use { c ->
-                while (c.moveToNext() && messages.length() < 500) {
+                val limit = if (numberToRequest >= 0) numberToRequest.coerceAtMost(500) else 500
+                while (messages.length() < limit && c.moveToNext()) {
                     messages.put(toMessage(c, threadId))
                 }
             }
@@ -84,6 +87,7 @@ internal object SmsProvider {
             .put("date", c.getLong(c.getColumnIndexOrThrow(Telephony.Sms.DATE)))
             .put("read", c.getInt(c.getColumnIndexOrThrow(Telephony.Sms.READ)))
             .put("type", c.getInt(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))
+            .put("sub_id", -1)
             .put("event", 1)
     }
 

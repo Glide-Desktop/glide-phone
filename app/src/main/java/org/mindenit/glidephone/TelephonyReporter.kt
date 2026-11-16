@@ -33,7 +33,9 @@ internal object TelephonyReporter {
                     }
                     TelephonyManager.CALL_STATE_OFFHOOK -> emit(ProtocolPackets.telephony("talking", name, number))
                     TelephonyManager.CALL_STATE_IDLE -> {
-                        if (lastState == TelephonyManager.CALL_STATE_RINGING) {
+                        if (lastState == TelephonyManager.CALL_STATE_IDLE) {
+                            // Initial callback on registration: nothing happened.
+                        } else if (lastState == TelephonyManager.CALL_STATE_RINGING) {
                             emit(ProtocolPackets.telephony("missedCall", name, number))
                         } else {
                             emit(ProtocolPackets.telephony("ringing", name, number, isCancel = true))

@@ -383,6 +383,23 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 runCatching {
                     val address = InetAddress.getByName(candidate.host)
                     check(address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)
+                    // We know where the device listens, so open the link ourselves; only fall
+                    // back to announcing (and waiting for it to call back) if that fails.
+                    val dialed = runCatching {
+                        val identity = LocalIdentity().loadOrCreate()
+                        val trusted = TrustedPeerStore(app)
+                        val peer = IdentityPacket.Peer(
+                            candidate.id, candidate.name, candidate.protocolVersion ?: IdentityPacket.VERSION,
+                            "desktop", emptySet(), candidate.port
+                        )
+                        IncomingHandshake.connect(peer, address, identity, this.deviceName) { trusted.certificate(it, identity.id) }
+                            .also { lastDial[candidate.id] = android.os.SystemClock.elapsedRealtime() }
+                            .let { Triple(it, identity, trusted) }
+                    }.getOrNull()
+                    if (dialed != null) {
+                        adopt(dialed.first, dialed.second, dialed.third)
+                        return@runCatching
+                    }
                     // Give a freshly started listener a moment to bind.
                     var port = server?.takeIf { !it.isClosed }?.localPort
                     var waited = 0

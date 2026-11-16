@@ -573,7 +573,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             ProtocolPackets.TYPE_CONTACTS_REQUEST_VCARDS -> {
                 val requested = body.optJSONArray("uids")
                 val list = buildList { if (requested != null) for (i in 0 until requested.length()) add(requested.optString(i)) }
-                sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list)))
+                val selfId = runCatching { LocalIdentity().loadOrCreate().id }.getOrDefault("")
+                sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> {
                 sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversations(app)))

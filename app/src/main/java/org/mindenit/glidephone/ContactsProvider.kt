@@ -34,19 +34,27 @@ internal object ContactsProvider {
         return out
     }
 
-    fun vcards(context: Context, uids: List<String>): Map<String, String> {
+    fun vcards(context: Context, uids: List<String>, deviceId: String): Map<String, String> {
         if (!hasPermission(context)) return emptyMap()
+        val timestamps = uidTimestamps(context)
         val out = LinkedHashMap<String, String>()
         uids.take(500).forEach { uid ->
             runCatching {
                 val lookupKey = lookupKeyFor(context, uid) ?: return@forEach
                 val uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_VCARD_URI, lookupKey)
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    out[uid] = input.readBytes().toString(Charsets.UTF_8)
+                    out[uid] = withMetadata(input.readBytes().toString(Charsets.UTF_8), deviceId, uid, timestamps[uid] ?: 0L)
                 }
             }
         }
         return out
+    }
+
+    /** KDE Connect tags every vCard with the source device/uid and a REV timestamp. */
+    internal fun withMetadata(vcard: String, deviceId: String, uid: String, timestamp: Long): String {
+        val end = vcard.lastIndexOf("END:VCARD")
+        if (end < 0) return vcard
+        return vcard.substring(0, end) + "X-KDECONNECT-ID-DEV-$deviceId:$uid\r\nREV:$timestamp\r\n" + vcard.substring(end)
     }
 
     private fun lookupKeyFor(context: Context, contactId: String): String? {

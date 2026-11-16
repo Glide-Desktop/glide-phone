@@ -213,4 +213,11 @@ class ProtocolPacketsTest {
         val body = JSONObject(IdentityPacket.encode("a".repeat(36), "Phone", 1716)).getJSONObject("body")
         assertEquals(IdentityPacket.INCOMING.size, body.getJSONArray("incomingCapabilities").length())
     }
+
+    @Test
+    fun vcardGetsKdeConnectMetadataBeforeEnd() {
+        val card = ContactsProvider.withMetadata("BEGIN:VCARD\r\nFN:Anna\r\nEND:VCARD\r\n", "dev-1", "42", 1700L)
+        assertTrue(card.contains("X-KDECONNECT-ID-DEV-dev-1:42\r\nREV:1700\r\nEND:VCARD"))
+        assertTrue(card.startsWith("BEGIN:VCARD"))
+    }
 }

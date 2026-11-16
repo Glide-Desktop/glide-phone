@@ -42,34 +42,67 @@ internal object IncomingHandshake {
                 throw IOException("Wrong protocol version")
             }
 
-            // A self-signed certificate is accepted only for this pending pairing
-            // channel. It is not an authorization to transfer user data.
-            val pinnedCertificate = trustedCertificateFor(first.id)
-            val trust = PendingCertificateCheck(first.id, pinnedCertificate)
-            val context = SSLContext.getInstance("TLSv1.2")
-            context.init(arrayOf(IdentityKeyManager(identity)), arrayOf(trust), null)
-            secure = context.socketFactory.createSocket(socket, socket.inetAddress.hostAddress, socket.port, true) as SSLSocket
-            secure.useClientMode = true
-            secure.enabledCipherSuites = secure.enabledCipherSuites.filter {
-                it.startsWith("TLS_ECDHE_") || it.startsWith("TLS_AES_") || it.startsWith("TLS_CHACHA20_")
-            }.toTypedArray()
-            secure.soTimeout = TIMEOUT_MS
-            secure.startHandshake()
-            val certificate = secure.session.peerCertificates.firstOrNull() as? X509Certificate
-                ?: throw IOException("Missing peer certificate")
-
-            secure.outputStream.write(IdentityPacket.encode(identity.id, deviceName).toByteArray(Charsets.UTF_8))
-            secure.outputStream.flush()
-            val verified = IdentityPacket.decode(readLine(secure)) ?: throw IOException("Invalid encrypted identity")
-            if (verified.id != first.id || verified.version != first.version) {
-                throw IOException("Identity changed during handshake")
-            }
-            return Pending(secure, verified, certificate, pinnedCertificate != null)
+            secure = secureSocket(socket, identity, first.id, clientMode = true, trustedCertificateFor(first.id))
+            return exchangeIdentity(secure, identity, deviceName, first, trustedCertificateFor(first.id) != null)
         } catch (error: Exception) {
             runCatching { secure?.close() ?: socket.close() }
             if (error is IOException) throw error
             throw IOException("Handshake failed", error)
         }
+    }
+
+    /**
+     * The mirror case: we received [peer]'s UDP identity broadcast, so we open the TCP
+     * connection, introduce ourselves in plain text and then act as the TLS *server*.
+     */
+    @Throws(IOException::class)
+    fun connect(peer: IdentityPacket.Peer, address: java.net.InetAddress, identity: LocalIdentity.Identity, deviceName: String, trustedCertificateFor: (String) -> X509Certificate?): Pending {
+        if (peer.version != IdentityPacket.VERSION || peer.id == identity.id) throw IOException("Unsupported or self identity")
+        val socket = Socket()
+        var secure: SSLSocket? = null
+        try {
+            socket.connect(java.net.InetSocketAddress(address, peer.tcpPort ?: 1716), TIMEOUT_MS)
+            socket.soTimeout = TIMEOUT_MS
+            socket.getOutputStream().write(
+                IdentityPacket.encode(identity.id, deviceName, null, peer.id, peer.version).toByteArray(Charsets.UTF_8)
+            )
+            socket.getOutputStream().flush()
+            val pinned = trustedCertificateFor(peer.id)
+            secure = secureSocket(socket, identity, peer.id, clientMode = false, pinned)
+            return exchangeIdentity(secure, identity, deviceName, peer, pinned != null)
+        } catch (error: Exception) {
+            runCatching { secure?.close() ?: socket.close() }
+            if (error is IOException) throw error
+            throw IOException("Handshake failed", error)
+        }
+    }
+
+    // A self-signed certificate is accepted only for this pending pairing channel.
+    // It is not an authorization to transfer user data.
+    private fun secureSocket(socket: Socket, identity: LocalIdentity.Identity, peerId: String, clientMode: Boolean, pinned: X509Certificate?): SSLSocket {
+        val context = SSLContext.getInstance("TLSv1.2")
+        context.init(arrayOf(IdentityKeyManager(identity)), arrayOf(PendingCertificateCheck(peerId, pinned)), null)
+        val secure = context.socketFactory.createSocket(socket, socket.inetAddress.hostAddress, socket.port, true) as SSLSocket
+        secure.useClientMode = clientMode
+        if (!clientMode) secure.needClientAuth = true
+        secure.enabledCipherSuites = secure.enabledCipherSuites.filter {
+            it.startsWith("TLS_ECDHE_") || it.startsWith("TLS_AES_") || it.startsWith("TLS_CHACHA20_")
+        }.toTypedArray()
+        secure.soTimeout = TIMEOUT_MS
+        secure.startHandshake()
+        return secure
+    }
+
+    private fun exchangeIdentity(secure: SSLSocket, identity: LocalIdentity.Identity, deviceName: String, first: IdentityPacket.Peer, pinned: Boolean): Pending {
+        val certificate = secure.session.peerCertificates.firstOrNull() as? X509Certificate
+            ?: throw IOException("Missing peer certificate")
+        secure.outputStream.write(IdentityPacket.encode(identity.id, deviceName).toByteArray(Charsets.UTF_8))
+        secure.outputStream.flush()
+        val verified = IdentityPacket.decode(readLine(secure)) ?: throw IOException("Invalid encrypted identity")
+        if (verified.id != first.id || verified.version != first.version) {
+            throw IOException("Identity changed during handshake")
+        }
+        return Pending(secure, verified, certificate, pinned)
     }
 
     private fun readLine(socket: Socket): String {
@@ -91,10 +124,9 @@ internal object IncomingHandshake {
     @SuppressLint("CustomX509TrustManager")
     private class PendingCertificateCheck(private val expectedId: String, private val pinned: X509Certificate?) : X509TrustManager {
         override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-            throw CertificateException("Unexpected client certificate")
-        }
-        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = verify(chain)
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = verify(chain)
+        private fun verify(chain: Array<out X509Certificate>?) {
             val cert = chain?.singleOrNull() ?: throw CertificateException("Invalid peer certificate chain")
             cert.checkValidity()
             if (pinned != null && !MessageDigest.isEqual(cert.encoded, pinned.encoded)) {

@@ -92,6 +92,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     @Volatile private var deviceName: String = SetupPreferences(app).deviceName
     @Volatile private var server: ServerSocket? = null
+    @Volatile private var udp: DatagramSocket? = null
+    private val lastDial = ConcurrentHashMap<String, Long>()
     private val advertising = AtomicBoolean(false)
     @Volatile private var broadcaster: Thread? = null
 
@@ -103,6 +105,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val volumeSinks = ConcurrentHashMap<String, List<VolumeSink>>()
     @Volatile private var target: String? = null
     @Volatile private var lastClipboardSeen: String? = null
+
+    /** Like KDE Connect, announce ourselves again whenever the network changes. */
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            main.postDelayed({ if (advertising.get()) broadcastNow() }, 2_000)
+        }
+    }
 
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { onLocalClipboardChanged() }
 
@@ -158,14 +167,24 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         if (closed.get() || advertising.getAndSet(true)) return
         deviceName = SetupPreferences(app).deviceName
         broadcaster = Thread({ serverLoop() }, "GlideServer").apply { isDaemon = true; start() }
+        runCatching {
+            (app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
+                ?.registerDefaultNetworkCallback(networkCallback)
+        }
         runCatching { TelephonyReporter.start(app) { packet -> broadcastPacket(packet) } }
     }
 
     fun stopServer() {
         if (!advertising.getAndSet(false)) return
         runCatching { TelephonyReporter.stop(app) }
+        runCatching {
+            (app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
+                ?.unregisterNetworkCallback(networkCallback)
+        }
         runCatching { server?.close() }
         server = null
+        runCatching { udp?.close() }
+        udp = null
         broadcaster?.interrupt(); broadcaster = null
     }
 
@@ -186,15 +205,29 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     }
 
     private fun serverLoop() {
+        var first = true
         while (advertising.get()) {
             if (server?.isClosed != false) {
                 val listener = runCatching { openListener() }.getOrNull()
                 server = listener
                 if (listener != null) {
                     Thread({ acceptLoop(listener) }, "GlideServer-Accept").apply { isDaemon = true; start() }
+                    first = true
                 }
             }
-            broadcastNow()
+            if (udp?.isClosed != false) {
+                val socket = runCatching {
+                    DatagramSocket(null).apply { reuseAddress = true; broadcast = true; bind(InetSocketAddress(1716)) }
+                }.getOrNull()
+                udp = socket
+                if (socket != null) {
+                    Thread({ udpLoop(socket) }, "GlideServer-Udp").apply { isDaemon = true; start() }
+                }
+            }
+            // Peers open a fresh link for every identity broadcast they receive, so only
+            // announce when it is needed: on start, and while nobody is linked to us.
+            if (first || (connections.isEmpty() && pending.isEmpty())) broadcastNow()
+            first = false
             try { Thread.sleep(BROADCAST_INTERVAL_MS) } catch (_: InterruptedException) { break }
         }
     }
@@ -214,6 +247,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         }
     }
 
+    /** Someone answered our broadcast: they connect, we are the TLS client. */
     private fun handleIncoming(socket: Socket) {
         try {
             val address = socket.inetAddress
@@ -223,10 +257,54 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             val identity = LocalIdentity().loadOrCreate()
             val trusted = TrustedPeerStore(app)
             val handshake = IncomingHandshake.open(socket, identity, deviceName, null) { trusted.certificate(it, identity.id) }
+            adopt(handshake, identity, trusted)
+        } catch (_: Exception) {
+            runCatching { socket.close() }
+        }
+    }
+
+    /** We heard someone's broadcast: connect to them, as KDE Connect peers expect. */
+    private fun udpLoop(socket: DatagramSocket) {
+        val selfId = runCatching { LocalIdentity().loadOrCreate().id }.getOrNull()
+        val buffer = ByteArray(IdentityPacket.MAX_BYTES.coerceAtMost(64 * 1024))
+        while (advertising.get() && !socket.isClosed) {
+            try {
+                val packet = DatagramPacket(buffer, buffer.size)
+                socket.receive(packet)
+                val address = packet.address
+                if (!(address.isSiteLocalAddress || address.isLinkLocalAddress)) continue
+                val peer = IdentityPacket.decode(String(packet.data, packet.offset, packet.length, Charsets.UTF_8)) ?: continue
+                if (peer.id == selfId || peer.version != IdentityPacket.VERSION) continue
+                if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
+                val now = android.os.SystemClock.elapsedRealtime()
+                val last = lastDial[peer.id]
+                if (last != null && now - last < DIAL_INTERVAL_MS) continue
+                lastDial[peer.id] = now
+                io.execute {
+                    runCatching {
+                        val identity = LocalIdentity().loadOrCreate()
+                        val trusted = TrustedPeerStore(app)
+                        val handshake = IncomingHandshake.connect(peer, address, identity, deviceName) { trusted.certificate(it, identity.id) }
+                        adopt(handshake, identity, trusted)
+                    }
+                }
+            } catch (_: RejectedExecutionException) {
+                break
+            } catch (_: Exception) {
+                if (socket.isClosed) break
+            }
+        }
+    }
+
+    /** Owns a freshly secured link until it closes: pair if needed, then run it. */
+    private fun adopt(handshake: IncomingHandshake.Pending, identity: LocalIdentity.Identity, trusted: TrustedPeerStore) {
+        try {
             val id = handshake.peer.id
             if (id == identity.id) { handshake.socket.close(); return }
 
             if (!handshake.previouslyPinned) {
+                // Never let a duplicate link interrupt a verification the user is looking at.
+                if (pending[id]?.session?.isPairing == true) { handshake.socket.close(); return }
                 val session = PairingSession(handshake, identity, trusted)
                 val entry = PendingPeer(handshake.peer.name, handshake.socket, session)
                 pending.put(id, entry)?.let { old -> runCatching { old.socket.close() } }
@@ -244,7 +322,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             }
             maintainConnection(handshake, trusted, identity)
         } catch (_: Exception) {
-            runCatching { socket.close() }
+            runCatching { handshake.socket.close() }
         }
     }
 
@@ -806,5 +884,6 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private companion object {
         const val BROADCAST_INTERVAL_MS = 15_000L
         const val CONNECT_TIMEOUT_MS = 20_000L
+        const val DIAL_INTERVAL_MS = 3_000L
     }
 }

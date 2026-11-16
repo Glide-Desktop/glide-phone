@@ -27,6 +27,10 @@ internal class PairingSession(
     @Volatile private var decision: Boolean? = null
     @Volatile private var initiateRequested = false
 
+    /** True while a verification code is on screen (a request is pending either way). */
+    @Volatile var isPairing = false
+        private set
+
     fun initiate() { initiateRequested = true }
 
     override fun decide(accept: Boolean) { decision = accept }
@@ -44,6 +48,7 @@ internal class PairingSession(
             while (true) {
                 val now = SystemClock.elapsedRealtime()
                 val current = state
+                isPairing = current != null
                 if (current == null) {
                     decision = null
                     if (initiateRequested) {

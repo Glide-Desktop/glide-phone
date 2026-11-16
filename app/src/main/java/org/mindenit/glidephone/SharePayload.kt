@@ -60,6 +60,81 @@ internal object SharePayload {
         return Handle(server.localPort, server)
     }
 
+    /**
+     * Downloads a file a trusted peer is offering on [port] (we are the TLS client) and
+     * stores it in the public Downloads folder. Returns the saved file name, or null.
+     */
+    fun receive(
+        context: android.content.Context,
+        identity: LocalIdentity.Identity,
+        peerCertificate: X509Certificate,
+        host: java.net.InetAddress,
+        port: Int,
+        size: Long,
+        filename: String
+    ): String? {
+        val safeName = filename.substringAfterLast('/').substringAfterLast('\\')
+            .filterNot { it.isISOControl() }.trim().take(120).ifBlank { "glide-file" }
+        var secure: SSLSocket? = null
+        return try {
+            val raw = java.net.Socket()
+            raw.connect(InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS)
+            val context2 = SSLContext.getInstance("TLSv1.2")
+            context2.init(arrayOf(IdentityKeyManager(identity)), arrayOf(PinnedServerCheck(peerCertificate)), null)
+            secure = (context2.socketFactory.createSocket(raw, host.hostAddress, port, true) as SSLSocket).apply {
+                useClientMode = true
+                soTimeout = ACCEPT_TIMEOUT_MS
+                startHandshake()
+            }
+            val input = secure.inputStream
+            openDownload(context, safeName)?.use { out ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (size < 0 || total < size) {
+                    val want = if (size < 0) buffer.size else minOf(buffer.size.toLong(), size - total).toInt()
+                    val read = input.read(buffer, 0, want)
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    total += read
+                }
+                out.flush()
+                if (size >= 0 && total < size) return null
+            } ?: return null
+            safeName
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { secure?.close() }
+        }
+    }
+
+    private fun openDownload(context: android.content.Context, name: String): java.io.OutputStream? {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+            }
+            val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return null
+            return context.contentResolver.openOutputStream(uri)
+        }
+        val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: return null
+        return java.io.File(dir, name).outputStream()
+    }
+
+    @SuppressLint("CustomX509TrustManager")
+    private class PinnedServerCheck(private val pinned: X509Certificate) : X509TrustManager {
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            throw CertificateException("Unexpected client certificate")
+        }
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            val cert = chain?.firstOrNull() ?: throw CertificateException("Missing server certificate")
+            if (!MessageDigest.isEqual(cert.encoded, pinned.encoded)) {
+                throw CertificateException("Payload peer certificate mismatch")
+            }
+        }
+    }
+
     fun queryName(resolver: ContentResolver, uri: Uri): String? = runCatching {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {

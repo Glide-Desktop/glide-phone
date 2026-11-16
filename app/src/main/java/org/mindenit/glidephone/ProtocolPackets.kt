@@ -165,11 +165,6 @@ internal object ProtocolPackets {
         .put("body", body)
         .toString() + "\n"
 
-    fun systemVolumeSinks(sinks: JSONArray): String = JSONObject()
-        .put("id", System.currentTimeMillis())
-        .put("type", TYPE_SYSTEMVOLUME)
-        .put("body", JSONObject().put("sinkList", sinks))
-        .toString() + "\n"
 
     // ---- Run command ----
 
@@ -251,10 +246,49 @@ internal object ProtocolPackets {
             .put("filename", filename)
             .put("lastModified", System.currentTimeMillis())
             .put("numberOfFiles", 1)
-            .put("totalPayloadSize", size)
-            .put("payloadSize", size)
-            .put("payloadTransferInfo", JSONObject().put("port", port)))
+            .put("totalPayloadSize", size))
+        .put("payloadSize", size)
+        .put("payloadTransferInfo", JSONObject().put("port", port))
         .toString() + "\n"
+
+    // Keys under which TrustedConnection exposes top-level payload metadata to handlers.
+    const val KEY_PAYLOAD_SIZE = "_payloadSize"
+    const val KEY_PAYLOAD_PORT = "_payloadPort"
+
+    // ---- Digitizer (drawing tablet) ----
+
+    const val TYPE_DIGITIZER = "kdeconnect.digitizer"
+    const val TYPE_DIGITIZER_SESSION = "kdeconnect.digitizer.session"
+
+    fun digitizerStart(width: Int, height: Int, resolutionX: Int, resolutionY: Int): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_DIGITIZER_SESSION)
+        .put("body", JSONObject().put("action", "start").put("width", width).put("height", height)
+            .put("resolutionX", resolutionX).put("resolutionY", resolutionY))
+        .toString() + "\n"
+
+    fun digitizerEnd(): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_DIGITIZER_SESSION)
+        .put("body", JSONObject().put("action", "end"))
+        .toString() + "\n"
+
+    fun digitizerEvent(active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean = false): String {
+        val body = JSONObject()
+        active?.let { body.put("active", it) }
+        touching?.let { body.put("touching", it) }
+        body.put("tool", if (rubber) "Rubber" else "Pen")
+        x?.let { body.put("x", it) }
+        y?.let { body.put("y", it) }
+        pressure?.let { body.put("pressure", it) }
+        return JSONObject().put("id", System.currentTimeMillis())
+            .put("type", TYPE_DIGITIZER).put("body", body).toString() + "\n"
+    }
+
+    // Mousepad special keys (KDE Connect SpecialKeysMap)
+    const val KEY_BACKSPACE = 1
+    const val KEY_TAB = 2
+    const val KEY_ENTER = 12
 
     fun shareText(text: String): String = JSONObject()
         .put("id", System.currentTimeMillis())

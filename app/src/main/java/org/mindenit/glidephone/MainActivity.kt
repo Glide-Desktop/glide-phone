@@ -58,6 +58,10 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Speaker
+import androidx.compose.material.icons.outlined.Draw
+import androidx.compose.material.icons.outlined.WifiTethering
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material3.*
@@ -122,6 +126,9 @@ internal enum class Detail(val title: String, val icon: ImageVector) {
     BATTERY("Заряд батареї", Icons.Outlined.BatteryChargingFull),
     REMOTE("Миша та клавіатура", Icons.Outlined.Mouse),
     COMMANDS("Команди", Icons.Outlined.Terminal),
+    MEDIA("Керування медіа", Icons.Outlined.PlayCircle),
+    VOLUME("Гучність комп’ютера", Icons.Outlined.Speaker),
+    DIGITIZER("Графічний планшет", Icons.Outlined.Draw),
     SETTINGS("Можливості", Icons.Outlined.Tune),
     PRIVACY("Приватність", Icons.Outlined.Shield),
     ABOUT("Про застосунок", Icons.Outlined.Info)
@@ -164,61 +171,35 @@ private fun GlideApp() {
     var step by rememberSaveable { mutableIntStateOf(0) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var detail by rememberSaveable { mutableStateOf<Detail?>(null) }
-    var pairingEvent by remember { mutableStateOf<PairingConnector.Event?>(null) }
-    var connectedDevices by remember { mutableStateOf<List<RemoteDevice>>(emptyList()) }
-    var isPhoneRinging by remember { mutableStateOf(false) }
-    var lastClipboard by remember { mutableStateOf<String?>(null) }
-    var lastShare by remember { mutableStateOf<PairingConnector.Event.ShareReceived?>(null) }
-    var peerBattery by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
-    var remoteCommands by remember { mutableStateOf<List<PairingConnector.RemoteCommand>>(emptyList()) }
-
-    val connector = remember {
-        PairingConnector(context) { event ->
-            when (event) {
-                PairingConnector.Event.Connecting -> pairingEvent = event
-                is PairingConnector.Event.Connected -> {
-                    pairingEvent = event
-                    connectedDevices = connectedDevices.filterNot { it.id == event.id } + RemoteDevice(event.id, event.name)
-                }
-                is PairingConnector.Event.Disconnected -> {
-                    connectedDevices = connectedDevices.filterNot { it.id == event.id }
-                    peerBattery = null
-                    isPhoneRinging = false
-                    pairingEvent = event
-                }
-                PairingConnector.Event.Failed -> pairingEvent = event
-                is PairingConnector.Event.RingRequest -> isPhoneRinging = true
-                is PairingConnector.Event.ClipboardReceived -> lastClipboard = event.content
-                is PairingConnector.Event.ShareReceived -> lastShare = event
-                is PairingConnector.Event.PeerBattery -> peerBattery = Pair(event.charge, event.charging)
-                is PairingConnector.Event.Verify -> pairingEvent = event
-                is PairingConnector.Event.PingReceived -> Unit
-                is PairingConnector.Event.CommandList -> remoteCommands = event.commands
-                is PairingConnector.Event.RemoteNotification -> {
-                    if (event.cancel) RemoteNotifications.cancel(context, event.notificationId)
-                    else RemoteNotifications.post(context, event.notificationId, event.appName, event.title, event.text)
-                }
-            }
-        }
-    }
-    DisposableEffect(connector) { onDispose { connector.close() } }
-
-    // Keep the phone discoverable (advertise + listen) while setup is complete.
-    DisposableEffect(completed) {
-        if (completed) connector.startServer()
-        onDispose { }
-    }
+    val connector = remember { GlideHub.connector(context) }
+    val pairingEvent = GlideHub.pairingEvent
+    val connectedDevices = GlideHub.connectedDevices
+    val isPhoneRinging = GlideHub.isPhoneRinging
 
     var selectedDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedDevice = connectedDevices.firstOrNull { it.id == selectedDeviceId }
         ?: connectedDevices.firstOrNull()
     LaunchedEffect(selectedDevice?.id) { connector.setTarget(selectedDevice?.id) }
+    val peerBattery = selectedDevice?.let { GlideHub.peerBatteries[it.id] }
+    val remoteCommands = selectedDevice?.let { GlideHub.remoteCommands[it.id] } ?: emptyList()
 
-    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // Go online (advertise + listen + background service) once setup is complete, asking
+    // for the permissions that discovery and notifications depend on.
+    val startPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result[Manifest.permission.ACCESS_LOCAL_NETWORK] == true) connector.restartServer()
+    }
     LaunchedEffect(completed) {
-        if (completed && Build.VERSION.SDK_INT >= 33 && !RemoteNotifications.hasPermission(context)) {
-            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (!completed) return@LaunchedEffect
+        GlideHub.goOnline(context)
+        val wanted = buildList {
+            if (Build.VERSION.SDK_INT >= 37 && ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.ACCESS_LOCAL_NETWORK)
+            }
+            if (Build.VERSION.SDK_INT >= 33 && !RemoteNotifications.hasPermission(context)) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
+        if (wanted.isNotEmpty()) startPermissions.launch(wanted.toTypedArray())
     }
     val advancedPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         connector.refreshTelephony()
@@ -251,6 +232,9 @@ private fun GlideApp() {
         }
     }
 
+    // Pairing prompts must be reachable from every screen, not only the device list.
+    PairingDialogs(connector, pairingEvent) { GlideHub.pairingEvent = it }
+
     if (!completed) {
         key(step) {
             Onboarding(
@@ -258,7 +242,7 @@ private fun GlideApp() {
                 deviceName = deviceName,
                 connector = connector,
                 pairingEvent = pairingEvent,
-                onPairingEvent = { pairingEvent = it },
+                onPairingEvent = { GlideHub.pairingEvent = it },
                 selectedFeatures = selectedFeatures,
                 onFeatureChange = setFeature,
                 onBack = { step-- },
@@ -279,12 +263,13 @@ private fun GlideApp() {
             isRinging = isPhoneRinging || connector.isRinging,
             onStopAlarm = {
                 connector.stopAlarm()
-                isPhoneRinging = false
+                GlideHub.isPhoneRinging = false
             },
-            lastClipboard = lastClipboard,
+            deviceId = selectedDevice?.id,
+            lastClipboard = GlideHub.lastClipboard,
             peerBattery = peerBattery,
             remoteCommands = remoteCommands,
-            lastShare = lastShare,
+            lastShare = GlideHub.lastShare,
             onBack = { detail = null },
             selectedFeatures = selectedFeatures,
             onFeatureChange = setFeature
@@ -305,11 +290,15 @@ private fun GlideApp() {
                         isRinging = isPhoneRinging || connector.isRinging,
                         onStopAlarm = {
                             connector.stopAlarm()
-                            isPhoneRinging = false
+                            GlideHub.isPhoneRinging = false
                         },
-                        onSendFile = { fileLauncher.launch("*/*") }
+                        onSendFile = { fileLauncher.launch("*/*") },
+                        onPing = {
+                            val sent = connector.sendPing()
+                            android.widget.Toast.makeText(context, if (sent) "Пінг надіслано" else "Пристрій не підтримує пінг", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     )
-                    1 -> DevicesScreen(deviceName, connector, pairingEvent) { pairingEvent = it }
+                    1 -> DevicesScreen(deviceName, connector, pairingEvent) { GlideHub.pairingEvent = it }
                     else -> MeScreen(deviceName, onRename = { name ->
                         preferences.setDeviceName(name)
                         deviceName = name
@@ -451,7 +440,7 @@ private fun ColumnScope.FindComputerStep(
         Spacer(Modifier.height(16.dp))
     }
     PrimaryButton(
-        if (connector.isConnected) "Далі" else "Пропустити",
+        if (connector.online) "Далі" else "Пропустити",
         onNext,
         trailingIcon = Icons.AutoMirrored.Outlined.ArrowForward
     )
@@ -496,7 +485,8 @@ internal fun HomeScreen(
     onFeatureChange: (String, Boolean) -> Unit = { _, _ -> },
     isRinging: Boolean = false,
     onStopAlarm: () -> Unit = {},
-    onSendFile: () -> Unit = {}
+    onSendFile: () -> Unit = {},
+    onPing: () -> Unit = {}
 ) {
     var showDevices by rememberSaveable { mutableStateOf(false) }
     ScreenColumn {
@@ -575,7 +565,11 @@ internal fun HomeScreen(
                     }
                 }
                 FeatureNavRow(Icons.Outlined.Mouse, "Миша та клавіатура", "Керуйте вказівником і друкуйте на комп’ютері") { onDetail(Detail.REMOTE) }
+                FeatureNavRow(Icons.Outlined.PlayCircle, "Керування медіа", "Пауза, треки й гучність плеєрів комп’ютера") { onDetail(Detail.MEDIA) }
+                FeatureNavRow(Icons.Outlined.Speaker, "Гучність комп’ютера", "Регулюйте аудіовиходи комп’ютера") { onDetail(Detail.VOLUME) }
                 FeatureNavRow(Icons.Outlined.Terminal, "Команди", "Запускайте команди на комп’ютері") { onDetail(Detail.COMMANDS) }
+                FeatureNavRow(Icons.Outlined.Draw, "Графічний планшет", "Малюйте на комп’ютері пальцем або стилусом") { onDetail(Detail.DIGITIZER) }
+                FeatureNavRow(Icons.Outlined.WifiTethering, "Пінг", "Перевірте зв’язок із комп’ютером", trailing = Icons.AutoMirrored.Outlined.Send) { onPing() }
                 FeatureNavRow(Icons.Outlined.Shield, "Приватність", "Керуйте доступом і тим, хто може підключатися") { onDetail(Detail.PRIVACY) }
             }
         }
@@ -628,17 +622,22 @@ private fun DeviceDiscoverySection(
     var permissionDenied by remember { mutableStateOf(false) }
     var resolving by remember { mutableStateOf(false) }
     var resolveFailed by remember { mutableStateOf(false) }
+    var namesVersion by remember { mutableIntStateOf(0) }
 
     val discovery = remember {
         NearbyDiscovery(context) { found, active, error ->
             services = found
             searching = active
             failed = error
+            namesVersion++
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionDenied = !granted
-        if (granted) discovery.start()
+        if (granted) {
+            connector.restartServer()
+            discovery.start()
+        }
     }
     DisposableEffect(discovery) { onDispose { discovery.stop() } }
 
@@ -662,6 +661,8 @@ private fun DeviceDiscoverySection(
     }
 
     fun connectTo(id: String) {
+        // A device whose link is already open can be asked to pair right away.
+        if (connector.requestPairing(id)) return
         if (resolving) return
         resolving = true
         resolveFailed = false
@@ -672,10 +673,10 @@ private fun DeviceDiscoverySection(
     }
 
     LaunchedEffect(autoStart) {
+        connector.startServer()
+        connector.refreshAdvertise()
         if (autoStart && !needsPermission()) discovery.start()
     }
-
-    PairingDialogs(connector, pairingEvent, onPairingEvent)
 
     // Search control
     if (autoStart) {
@@ -704,14 +705,8 @@ private fun DeviceDiscoverySection(
             TextButton(onClick = { connector.cancel(); onPairingEvent(null) }) { Text("Скасувати") }
             Spacer(Modifier.height(8.dp))
         }
-        is PairingConnector.Event.Connected -> {
-            val connected = pairingEvent
-            InfoCard(Icons.Outlined.CheckCircle, "Підключено", connected.name)
-            TextButton(onClick = { connector.disconnect(connected.id); onPairingEvent(null) }) { Text("Відключити") }
-            Spacer(Modifier.height(8.dp))
-        }
         is PairingConnector.Event.Disconnected -> {
-            InfoCard(Icons.Outlined.Info, "Зв’язок втрачено", "Знайдіть пристрій і підключіться знову.")
+            InfoCard(Icons.Outlined.Info, "Зв’язок втрачено", "Пристрій підключиться знову, щойно з’явиться в мережі.")
             Spacer(Modifier.height(8.dp))
         }
         PairingConnector.Event.Failed -> {
@@ -721,32 +716,76 @@ private fun DeviceDiscoverySection(
         else -> Unit
     }
 
-    // Results
+    // Paired and connected devices
+    val connected = GlideHub.connectedDevices
+    if (connected.isNotEmpty()) {
+        SectionLabel("Підключені")
+        Spacer(Modifier.height(8.dp))
+        connected.forEach { device ->
+            ConnectedDeviceRow(device.name) { connector.unpair(device.id); onPairingEvent(null) }
+            Spacer(Modifier.height(10.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+
+    // Devices that can be paired: open links first, then anything discovery has seen.
+    namesVersion // re-read names when discovery resolves them
+    val connectedIds = connected.map { it.id }.toSet()
+    val linked = GlideHub.availableDevices.filterNot { it.id in connectedIds }
+    val linkedIds = linked.map { it.id }.toSet()
+    val discovered = services.filterNot { it in connectedIds || it in linkedIds }.sorted()
+        .map { id -> RemoteDevice(id, discovery.deviceName(id) ?: if (resolving) "Отримання відомостей…" else "Пристрій поблизу") }
+    val candidates = linked + discovered
     when {
         permissionDenied -> InfoCard(Icons.Outlined.Info, "Немає доступу до локальної мережі", "Дозвольте доступ у налаштуваннях застосунку, щоб знайти пристрої.")
         failed -> InfoCard(Icons.Outlined.Info, "Не вдалося розпочати пошук", "Перевірте підключення до мережі та спробуйте ще раз.")
-        resolveFailed -> InfoCard(Icons.Outlined.Info, "Не вдалося отримати дані пристрою", "Спробуйте підключитися ще раз.")
-        services.isEmpty() -> InfoCard(
+        candidates.isEmpty() && connected.isEmpty() -> InfoCard(
             Icons.Outlined.Devices,
             "Поки що немає пристроїв",
             if (searching) "Триває пошук у локальній мережі…" else "Почніть пошук пристроїв поблизу."
         )
         else -> {
-            val sorted = services.sorted()
-            sorted.forEachIndexed { index, id ->
-                val name = discovery.deviceName(id) ?: if (resolving) "Отримання відомостей…" else "Пристрій поблизу"
+            if (resolveFailed) {
+                InfoCard(Icons.Outlined.Info, "Не вдалося отримати дані пристрою", "Спробуйте підключитися ще раз.")
+                Spacer(Modifier.height(10.dp))
+            }
+            if (candidates.isNotEmpty() && connected.isNotEmpty()) {
+                SectionLabel("Доступні")
+                Spacer(Modifier.height(8.dp))
+            }
+            candidates.forEachIndexed { index, device ->
                 if (index == 0) {
                     NearbyDeviceCard(
-                        name = name,
-                        connecting = resolving,
-                        onConnect = { connectTo(id) }
+                        name = device.name,
+                        connecting = resolving || pairingEvent == PairingConnector.Event.Connecting,
+                        onConnect = { connectTo(device.id) }
                     )
                 } else {
                     Spacer(Modifier.height(10.dp))
-                    FeatureNavRow(Icons.Outlined.Laptop, name, "Поблизу") { connectTo(id) }
+                    FeatureNavRow(Icons.Outlined.Laptop, device.name, "Поблизу") { connectTo(device.id) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ConnectedDeviceRow(name: String, onUnpair: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, LocalGlideColors.current.cardBorder, RoundedCornerShape(20.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconTile(Icons.Outlined.Laptop)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(4.dp))
+            ConnectedBadge()
+        }
+        TextButton(onClick = onUnpair) { Text("Роз’єднати") }
     }
 }
 
@@ -880,6 +919,7 @@ private fun DetailScreen(
     peerBattery: Pair<Int, Boolean>? = null,
     remoteCommands: List<PairingConnector.RemoteCommand> = emptyList(),
     lastShare: PairingConnector.Event.ShareReceived? = null,
+    deviceId: String? = null,
     onBack: () -> Unit,
     selectedFeatures: Set<String>,
     onFeatureChange: (String, Boolean) -> Unit
@@ -909,6 +949,9 @@ private fun DetailScreen(
                 Detail.PRESENTER -> PresenterDetail(connector, selectedFeatures, onFeatureChange)
                 Detail.REMOTE -> RemoteControlDetail(connector)
                 Detail.COMMANDS -> RunCommandDetail(connector, remoteCommands)
+                Detail.MEDIA -> MediaDetail(connector, deviceId)
+                Detail.VOLUME -> VolumeDetail(connector, deviceId)
+                Detail.DIGITIZER -> DigitizerDetail(connector)
                 Detail.RING -> RingDetail(context, connector, isRinging, onStopAlarm, selectedFeatures, onFeatureChange)
                 Detail.CLIPBOARD -> ClipboardDetail(context, connector, lastClipboard, selectedFeatures, onFeatureChange)
                 Detail.FILES -> FilesDetail(connector, lastShare, selectedFeatures, onFeatureChange)
@@ -916,7 +959,7 @@ private fun DetailScreen(
                     val feature = features.first { it.detail == detail }
                     NotificationAccessControl(
                         enabled = feature.id in selectedFeatures,
-                        connected = connector?.isConnected == true,
+                        connected = connector?.online == true,
                         supported = connector?.supportsNotifications == true
                     )
                     Spacer(Modifier.height(20.dp))
@@ -930,8 +973,8 @@ private fun DetailScreen(
 }
 
 @Composable
-private fun NotConnectedNotice(connector: PairingConnector?) {
-    if (connector?.isConnected != true) {
+internal fun NotConnectedNotice(connector: PairingConnector?) {
+    if (connector?.online != true) {
         InfoCard(Icons.Outlined.Info, "Комп’ютер не підключено", "Підключіть комп’ютер у вкладці «Пристрої», щоб надсилати команди.")
         Spacer(Modifier.height(16.dp))
     }
@@ -1006,14 +1049,14 @@ private fun ColumnScope.PresenterDetail(
 
 @Composable
 private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands: List<PairingConnector.RemoteCommand>) {
-    LaunchedEffect(connector?.isConnected) { if (connector?.isConnected == true) connector.requestCommands() }
+    LaunchedEffect(connector?.online) { if (connector?.online == true) connector.requestCommands() }
     Body("Запускайте команди, налаштовані на комп’ютері.")
     Spacer(Modifier.height(16.dp))
     NotConnectedNotice(connector)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         SectionLabel("Доступні команди")
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = { connector?.requestCommands() }, enabled = connector?.isConnected == true) { Text("Оновити") }
+        TextButton(onClick = { connector?.requestCommands() }, enabled = connector?.online == true) { Text("Оновити") }
     }
     Spacer(Modifier.height(8.dp))
     if (commands.isEmpty()) {
@@ -1107,11 +1150,12 @@ private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { if (connector?.sendType(typed) == true) typed = "" },
-            enabled = typed.isNotBlank() && connector?.isConnected == true,
+            enabled = typed.isNotEmpty() && connector?.online == true,
             modifier = Modifier.weight(1f),
             shape = CircleShape
         ) { Text("Надрукувати") }
-        OutlinedButton(onClick = { connector?.sendType("\n") }, modifier = Modifier.weight(1f), shape = CircleShape) { Text("Enter") }
+        OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_ENTER) }, modifier = Modifier.weight(1f), shape = CircleShape) { Text("Enter") }
+        OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_BACKSPACE) }, modifier = Modifier.weight(1f), shape = CircleShape) { Text("⌫") }
     }
 }
 
@@ -1180,7 +1224,7 @@ private fun ColumnScope.ClipboardDetail(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { if (connector?.sendClipboard(textToSend) == true) textToSend = "" },
-            enabled = textToSend.isNotBlank() && connector?.isConnected == true && FeatureId.CLIPBOARD.key in selectedFeatures,
+            enabled = textToSend.isNotBlank() && connector?.online == true && FeatureId.CLIPBOARD.key in selectedFeatures,
             modifier = Modifier.weight(1f),
             shape = CircleShape
         ) { Text("Надіслати") }
@@ -1244,13 +1288,13 @@ private fun ColumnScope.FilesDetail(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = { if (connector?.sendShareUrl(shareContent) == true) shareContent = "" },
-            enabled = shareContent.isNotBlank() && connector?.isConnected == true && FeatureId.FILES.key in selectedFeatures,
+            enabled = shareContent.isNotBlank() && connector?.online == true && FeatureId.FILES.key in selectedFeatures,
             modifier = Modifier.weight(1f),
             shape = CircleShape
         ) { Text("Відкрити URL") }
         OutlinedButton(
             onClick = { if (connector?.sendShareText(shareContent) == true) shareContent = "" },
-            enabled = shareContent.isNotBlank() && connector?.isConnected == true && FeatureId.FILES.key in selectedFeatures,
+            enabled = shareContent.isNotBlank() && connector?.online == true && FeatureId.FILES.key in selectedFeatures,
             modifier = Modifier.weight(1f),
             shape = CircleShape
         ) { Text("Як текст") }
@@ -1314,7 +1358,7 @@ private fun ColumnScope.BatteryDetail(
         InfoCard(
             Icons.Outlined.Laptop,
             "Підключений комп’ютер",
-            if (connector?.isConnected == true) "Дані очікуються від комп’ютера." else "Комп’ютер не підключено."
+            if (connector?.online == true) "Дані очікуються від комп’ютера." else "Комп’ютер не підключено."
         )
     }
     Spacer(Modifier.height(16.dp))
@@ -1400,12 +1444,12 @@ private fun PageDots(count: Int, index: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Body(text: String) {
+internal fun Body(text: String) {
     Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
 }
 
@@ -1485,7 +1529,7 @@ private fun ConnectedBadge() {
 }
 
 @Composable
-private fun InfoCard(icon: ImageVector, title: String, description: String) {
+internal fun InfoCard(icon: ImageVector, title: String, description: String) {
     Row(
         Modifier.fillMaxWidth().background(LocalGlideColors.current.tonal, RoundedCornerShape(22.dp)).padding(18.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1673,3 +1717,7 @@ private fun DeviceIllustration(modifier: Modifier = Modifier) {
         drawLine(onPrimary, Offset(w * .23f, h * .545f), Offset(w * .26f, h * .50f), 2.5.dp.toPx(), StrokeCap.Round)
     }
 }
+
+/** Observable (Compose-state backed) view of "is any device connected". */
+private val PairingConnector.online: Boolean
+    get() = GlideHub.connectedDevices.isNotEmpty()

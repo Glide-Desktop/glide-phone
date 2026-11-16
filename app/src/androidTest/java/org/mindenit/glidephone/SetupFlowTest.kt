@@ -33,6 +33,13 @@ class SetupFlowTest {
 
     @Before
     fun setUp() {
+        // The app asks for these on first launch; a system dialog would block the UI under test.
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        listOf("android.permission.POST_NOTIFICATIONS", "android.permission.ACCESS_LOCAL_NETWORK").forEach { permission ->
+            runCatching {
+                instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, permission)
+            }
+        }
         originalCompleted = if (preferences.contains("completed")) preferences.getBoolean("completed", false) else null
         originalFeatures = preferences.getStringSet("selected_features", null)?.toSet()
         originalDeviceName = preferences.getString("device_name", null)

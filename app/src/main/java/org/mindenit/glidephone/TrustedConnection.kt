@@ -37,6 +37,19 @@ internal class TrustedConnection(
         }
     }
 
+    /** Sends a protocol-level packet (e.g. unpair) without the capability gate. */
+    fun sendRaw(packetJson: String): Boolean = synchronized(writeLock) {
+        try {
+            val out = pending.socket.outputStream
+            out.write(packetJson.toByteArray(Charsets.UTF_8))
+            if (!packetJson.endsWith("\n")) out.write('\n'.code)
+            out.flush()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun run(keepRunning: () -> Boolean) {
         val socket = pending.socket
         socket.soTimeout = 1_000
@@ -76,6 +89,10 @@ internal class TrustedConnection(
             val packet = JSONObject(lineStr)
             val type = packet.optString("type")
             val body = packet.optJSONObject("body") ?: JSONObject()
+            // Payload metadata lives at the top level of a KDE Connect packet.
+            if (packet.has("payloadSize")) body.put(ProtocolPackets.KEY_PAYLOAD_SIZE, packet.optLong("payloadSize", -1))
+            packet.optJSONObject("payloadTransferInfo")?.optInt("port", -1)?.takeIf { it > 0 }
+                ?.let { body.put(ProtocolPackets.KEY_PAYLOAD_PORT, it) }
 
             if (type == ProtocolPackets.TYPE_PAIR) {
                 val pair = body.opt("pair") as? Boolean ?: true

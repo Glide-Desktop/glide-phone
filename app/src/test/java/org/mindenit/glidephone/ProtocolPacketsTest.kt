@@ -145,8 +145,10 @@ class ProtocolPacketsTest {
         assertEquals(ProtocolPackets.TYPE_SHARE_REQUEST, packet.getString("type"))
         val body = packet.getJSONObject("body")
         assertEquals("doc.pdf", body.getString("filename"))
-        assertEquals(2048L, body.getLong("payloadSize"))
-        assertEquals(1740, body.getJSONObject("payloadTransferInfo").getInt("port"))
+        // Payload metadata is a top-level packet field in the KDE Connect protocol.
+        assertFalse(body.has("payloadSize"))
+        assertEquals(2048L, packet.getLong("payloadSize"))
+        assertEquals(1740, packet.getJSONObject("payloadTransferInfo").getInt("port"))
     }
 
     @Test
@@ -167,5 +169,48 @@ class ProtocolPacketsTest {
         assertEquals("VLC", body.getString("player"))
         assertEquals("Song", body.getString("title"))
         assertTrue(body.getBoolean("isPlaying"))
+    }
+
+    @Test
+    fun digitizerPackets() {
+        val start = JSONObject(ProtocolPackets.digitizerStart(1000, 600, 16, 16))
+        assertEquals(ProtocolPackets.TYPE_DIGITIZER_SESSION, start.getString("type"))
+        assertEquals("start", start.getJSONObject("body").getString("action"))
+        assertEquals(1000, start.getJSONObject("body").getInt("width"))
+        assertEquals("end", JSONObject(ProtocolPackets.digitizerEnd()).getJSONObject("body").getString("action"))
+
+        val down = JSONObject(ProtocolPackets.digitizerEvent(true, true, 5, 7, 0.5)).getJSONObject("body")
+        assertTrue(down.getBoolean("active"))
+        assertEquals("Pen", down.getString("tool"))
+        assertEquals(7, down.getInt("y"))
+        val up = JSONObject(ProtocolPackets.digitizerEvent(false, false, null, null, null)).getJSONObject("body")
+        assertFalse(up.has("x"))
+        assertFalse(up.getBoolean("touching"))
+    }
+
+    @Test
+    fun telephonyAndContactsPackets() {
+        val ring = JSONObject(ProtocolPackets.telephony("ringing", "Anna", "+380")).getJSONObject("body")
+        assertEquals("ringing", ring.getString("event"))
+        assertEquals("Anna", ring.getString("contactName"))
+        assertFalse(ring.has("isCancel"))
+        assertTrue(JSONObject(ProtocolPackets.telephony("ringing", "", "", isCancel = true)).getJSONObject("body").getBoolean("isCancel"))
+
+        val uids = JSONObject(ProtocolPackets.contactsUids(mapOf("7" to 99L))).getJSONObject("body")
+        assertEquals("7", uids.getJSONArray("uids").getString(0))
+        assertEquals(99L, uids.getLong("7"))
+    }
+
+    @Test
+    fun identityAdvertisesControllerDirections() {
+        // The phone controls the computer's volume and media, so it must *send* requests
+        // and *receive* state, not the other way round.
+        assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME in IdentityPacket.INCOMING)
+        assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST in IdentityPacket.OUTGOING)
+        assertFalse(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST in IdentityPacket.INCOMING)
+        assertTrue(ProtocolPackets.TYPE_MPRIS in IdentityPacket.INCOMING)
+        assertTrue(ProtocolPackets.TYPE_MPRIS_REQUEST in IdentityPacket.OUTGOING)
+        val body = JSONObject(IdentityPacket.encode("a".repeat(36), "Phone", 1716)).getJSONObject("body")
+        assertEquals(IdentityPacket.INCOMING.size, body.getJSONArray("incomingCapabilities").length())
     }
 }

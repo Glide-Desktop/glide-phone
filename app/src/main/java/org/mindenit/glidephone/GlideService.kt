@@ -1,0 +1,85 @@
+package org.mindenit.glidephone
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import androidx.core.app.NotificationCompat
+
+/**
+ * Keeps the process (and therefore every connection held by [GlideHub]) alive while the
+ * app is in the background, the same role KDE Connect's BackgroundService plays.
+ */
+class GlideService : Service() {
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        running = true
+        promote()
+        if (SetupPreferences(this).isSetupComplete) GlideHub.connector(this).startServer()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        promote()
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        running = false
+        super.onDestroy()
+    }
+
+    private fun promote() {
+        runCatching {
+            val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
+            if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, buildNotification(this), type)
+            else startForeground(NOTIFICATION_ID, buildNotification(this))
+        }
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "glide_status"
+        private const val NOTIFICATION_ID = 1
+        @Volatile private var running = false
+
+        /** Update the ongoing notification after the set of connected devices changed. */
+        internal fun refresh(context: Context) {
+            if (!running) return
+            runCatching {
+                context.getSystemService(NotificationManager::class.java)
+                    ?.notify(NOTIFICATION_ID, buildNotification(context))
+            }
+        }
+
+        private fun buildNotification(context: Context): Notification {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (Build.VERSION.SDK_INT >= 26 && manager != null && manager.getNotificationChannel(CHANNEL_ID) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "Стан підключення", NotificationManager.IMPORTANCE_MIN)
+                )
+            }
+            val devices = GlideHub.connectedDevices
+            val text = if (devices.isEmpty()) "Немає підключених пристроїв"
+            else "Підключено: " + devices.joinToString { it.name }
+            val open = PendingIntent.getActivity(
+                context, 0, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            return NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+                .setContentTitle("Glide Phone")
+                .setContentText(text)
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setShowWhen(false)
+                .build()
+        }
+    }
+}

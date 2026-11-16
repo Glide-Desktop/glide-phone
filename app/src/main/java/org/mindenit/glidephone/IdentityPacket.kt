@@ -15,7 +15,7 @@ internal object IdentityPacket {
 
     data class Peer(val id: String, val name: String, val version: Int, val type: String, val incomingCapabilities: Set<String>, val tcpPort: Int? = null)
 
-    fun encode(id: String, name: String, tcpPort: Int? = null): String {
+    fun encode(id: String, name: String, tcpPort: Int? = null, targetDeviceId: String? = null, targetProtocolVersion: Int? = null): String {
         require(validId.matches(id))
         require(tcpPort == null || tcpPort in 1716..1764)
         val safeName = invalidName.replace(name, "").filterNot { it.isISOControl() }.trim().take(32)
@@ -25,44 +25,11 @@ internal object IdentityPacket {
             .put("deviceName", safeName)
             .put("deviceType", "phone")
             .put("protocolVersion", VERSION)
-            .put("incomingCapabilities", JSONArray()
-                .put(ProtocolPackets.TYPE_BATTERY)
-                .put(ProtocolPackets.TYPE_CLIPBOARD)
-                .put(ProtocolPackets.TYPE_CLIPBOARD_CONNECT)
-                .put(ProtocolPackets.TYPE_FINDMYPHONE_REQUEST)
-                .put(ProtocolPackets.TYPE_SHARE_REQUEST)
-                .put(ProtocolPackets.TYPE_RUNCOMMAND)
-                .put(ProtocolPackets.TYPE_NOTIFICATION)
-                .put(ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
-                .put(ProtocolPackets.TYPE_NOTIFICATION_REPLY)
-                .put(ProtocolPackets.TYPE_NOTIFICATION_ACTION)
-                .put(ProtocolPackets.TYPE_MPRIS_REQUEST)
-                .put(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST)
-                .put(ProtocolPackets.TYPE_CONTACTS_REQUEST_UIDS)
-                .put(ProtocolPackets.TYPE_CONTACTS_REQUEST_VCARDS)
-                .put(ProtocolPackets.TYPE_SMS_REQUEST)
-                .put(ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS)
-                .put(ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION)
-                .put(ProtocolPackets.TYPE_PING))
-            .put("outgoingCapabilities", JSONArray()
-                .put(ProtocolPackets.TYPE_NOTIFICATION)
-                .put(ProtocolPackets.TYPE_BATTERY)
-                .put(ProtocolPackets.TYPE_CLIPBOARD)
-                .put(ProtocolPackets.TYPE_CLIPBOARD_CONNECT)
-                .put(ProtocolPackets.TYPE_FINDMYPHONE_REQUEST)
-                .put(ProtocolPackets.TYPE_PRESENTER)
-                .put(ProtocolPackets.TYPE_MOUSEPAD_REQUEST)
-                .put(ProtocolPackets.TYPE_SHARE_REQUEST)
-                .put(ProtocolPackets.TYPE_RUNCOMMAND_REQUEST)
-                .put(ProtocolPackets.TYPE_CONNECTIVITY_REPORT)
-                .put(ProtocolPackets.TYPE_MPRIS)
-                .put(ProtocolPackets.TYPE_SYSTEMVOLUME)
-                .put(ProtocolPackets.TYPE_TELEPHONY)
-                .put(ProtocolPackets.TYPE_CONTACTS_RESPONSE_UIDS)
-                .put(ProtocolPackets.TYPE_CONTACTS_RESPONSE_VCARDS)
-                .put(ProtocolPackets.TYPE_SMS_MESSAGES)
-                .put(ProtocolPackets.TYPE_PING))
+            .put("incomingCapabilities", JSONArray(INCOMING))
+            .put("outgoingCapabilities", JSONArray(OUTGOING))
         if (tcpPort != null) body.put("tcpPort", tcpPort)
+        if (targetDeviceId != null) body.put("targetDeviceId", targetDeviceId)
+        if (targetProtocolVersion != null) body.put("targetProtocolVersion", targetProtocolVersion)
         return JSONObject().put("id", System.currentTimeMillis()).put("type", TYPE)
             .put("body", body).toString() + "\n"
     }
@@ -97,4 +64,51 @@ internal object IdentityPacket {
     }
 
     const val MAX_BYTES = 512 * 1024
+
+    /** Packet types this phone understands. */
+    val INCOMING = listOf(
+        ProtocolPackets.TYPE_BATTERY,
+        ProtocolPackets.TYPE_CLIPBOARD,
+        ProtocolPackets.TYPE_CLIPBOARD_CONNECT,
+        ProtocolPackets.TYPE_FINDMYPHONE_REQUEST,
+        ProtocolPackets.TYPE_SHARE_REQUEST,
+        ProtocolPackets.TYPE_RUNCOMMAND,
+        ProtocolPackets.TYPE_NOTIFICATION,
+        ProtocolPackets.TYPE_NOTIFICATION_REQUEST,
+        ProtocolPackets.TYPE_NOTIFICATION_REPLY,
+        ProtocolPackets.TYPE_NOTIFICATION_ACTION,
+        ProtocolPackets.TYPE_MPRIS,
+        ProtocolPackets.TYPE_MPRIS_REQUEST,
+        ProtocolPackets.TYPE_SYSTEMVOLUME,
+        ProtocolPackets.TYPE_CONTACTS_REQUEST_UIDS,
+        ProtocolPackets.TYPE_CONTACTS_REQUEST_VCARDS,
+        ProtocolPackets.TYPE_SMS_REQUEST,
+        ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS,
+        ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION,
+        ProtocolPackets.TYPE_PING
+    )
+
+    /** Packet types this phone may send. */
+    val OUTGOING = listOf(
+        ProtocolPackets.TYPE_NOTIFICATION,
+        ProtocolPackets.TYPE_BATTERY,
+        ProtocolPackets.TYPE_CLIPBOARD,
+        ProtocolPackets.TYPE_CLIPBOARD_CONNECT,
+        ProtocolPackets.TYPE_FINDMYPHONE_REQUEST,
+        ProtocolPackets.TYPE_PRESENTER,
+        ProtocolPackets.TYPE_MOUSEPAD_REQUEST,
+        ProtocolPackets.TYPE_SHARE_REQUEST,
+        ProtocolPackets.TYPE_RUNCOMMAND_REQUEST,
+        ProtocolPackets.TYPE_CONNECTIVITY_REPORT,
+        ProtocolPackets.TYPE_MPRIS,
+        ProtocolPackets.TYPE_MPRIS_REQUEST,
+        ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST,
+        ProtocolPackets.TYPE_TELEPHONY,
+        ProtocolPackets.TYPE_CONTACTS_RESPONSE_UIDS,
+        ProtocolPackets.TYPE_CONTACTS_RESPONSE_VCARDS,
+        ProtocolPackets.TYPE_SMS_MESSAGES,
+        ProtocolPackets.TYPE_DIGITIZER,
+        ProtocolPackets.TYPE_DIGITIZER_SESSION,
+        ProtocolPackets.TYPE_PING
+    )
 }

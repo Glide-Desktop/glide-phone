@@ -105,6 +105,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val volumeSinks = ConcurrentHashMap<String, List<VolumeSink>>()
     @Volatile private var target: String? = null
     @Volatile private var lastClipboardSeen: String? = null
+    /** When the local clipboard last changed (ms); 0 = unknown, as in KDE Connect. */
+    @Volatile private var lastClipboardTime = 0L
 
     /** Like KDE Connect, announce ourselves again whenever the network changes. */
     private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
@@ -489,7 +491,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             runCatching { connection.send(MediaControl.playerListPacket(app)) }
             runCatching { MediaControl.statePacket(app)?.let { connection.send(it) } }
             if (FeatureId.CLIPBOARD.key in features) {
-                lastClipboardSeen?.takeIf { it.isNotEmpty() }?.let { connection.send(ProtocolPackets.clipboardConnect(it)) }
+                val content = lastClipboardSeen
+                if (!content.isNullOrEmpty() && lastClipboardTime > 0) {
+                    connection.send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
+                }
             }
         }
     }
@@ -501,6 +506,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         }.getOrNull()
         if (text.isNullOrEmpty() || text == lastClipboardSeen) return
         lastClipboardSeen = text
+        lastClipboardTime = System.currentTimeMillis()
         if (FeatureId.CLIPBOARD.key in SetupPreferences(app).selectedFeatures()) {
             broadcastPacket(ProtocolPackets.clipboard(text))
         }
@@ -519,8 +525,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             }
             ProtocolPackets.TYPE_CLIPBOARD, ProtocolPackets.TYPE_CLIPBOARD_CONNECT -> {
                 val content = body.optString("content")
-                if (content.isNotEmpty() && FeatureId.CLIPBOARD.key in features && content != lastClipboardSeen) {
+                // On connect the newer clipboard wins; an unknown (0) timestamp never overwrites.
+                val stale = type == ProtocolPackets.TYPE_CLIPBOARD_CONNECT &&
+                    body.optLong("timestamp", 0L).let { it == 0L || it < lastClipboardTime }
+                if (!stale && content.isNotEmpty() && FeatureId.CLIPBOARD.key in features && content != lastClipboardSeen) {
                     lastClipboardSeen = content
+                    lastClipboardTime = System.currentTimeMillis()
                     main.post {
                         runCatching {
                             (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
@@ -805,6 +815,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendClipboard(content: String): Boolean {
         if (FeatureId.CLIPBOARD.key !in SetupPreferences(app).selectedFeatures()) return false
         lastClipboardSeen = content
+        lastClipboardTime = System.currentTimeMillis()
         return sendPacket(ProtocolPackets.clipboard(content))
     }
 

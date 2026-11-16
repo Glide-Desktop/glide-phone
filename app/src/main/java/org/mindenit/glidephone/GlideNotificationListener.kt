@@ -59,6 +59,7 @@ internal object NotificationBridge {
 
 class GlideNotificationListener : NotificationListenerService() {
     private val active = ConcurrentHashMap<String, StatusBarNotification>()
+    private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -82,7 +83,7 @@ class GlideNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         active.remove(sbn.key)
-        if (sbn.packageName != packageName) {
+        if (announced.remove(sbn.key)) {
             NotificationBridge.send(ProtocolPackets.notificationCancel(sbn.key))
         }
     }
@@ -118,9 +119,18 @@ class GlideNotificationListener : NotificationListenerService() {
 
     private fun publish(sbn: StatusBarNotification) {
         val notification = sbn.notification
+        // Same exclusions as KDE Connect: nothing persistent, local-only or media-related.
+        val unwanted = Notification.FLAG_FOREGROUND_SERVICE or Notification.FLAG_ONGOING_EVENT or
+            Notification.FLAG_LOCAL_ONLY or Notification.FLAG_GROUP_SUMMARY
         if (sbn.packageName == packageName ||
             notification.visibility == Notification.VISIBILITY_SECRET ||
-            notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+            notification.flags and unwanted != 0 ||
+            notification.category == Notification.CATEGORY_TRANSPORT) return
+        if (sbn.packageName == "com.android.systemui" &&
+            (sbn.tag == "low_battery" || (android.os.Build.VERSION.SDK_INT >= 26 && notification.channelId == "MediaOngoingActivity"))) return
+        if (android.os.Build.VERSION.SDK_INT >= 29 &&
+            runCatching { packageManager.isPackageSuspended(sbn.packageName) }.getOrDefault(false)) return
+        val isUpdate = !announced.add(sbn.key)
         val title = notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.take(1000).orEmpty()
         val body = (notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
             ?: notification.extras.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.take(4000).orEmpty()
@@ -140,8 +150,11 @@ class GlideNotificationListener : NotificationListenerService() {
                 appName = appName,
                 title = title,
                 text = body,
+                silent = isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0,
                 actions = actionTitles,
-                requestReplyId = if (hasReply) sbn.key else null
+                requestReplyId = if (hasReply) sbn.key else null,
+                isClearable = sbn.isClearable,
+                time = sbn.postTime
             )
         )
     }

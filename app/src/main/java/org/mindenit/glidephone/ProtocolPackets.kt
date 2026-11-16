@@ -310,14 +310,19 @@ internal object ProtocolPackets {
         text: String,
         silent: Boolean = false,
         actions: List<String> = emptyList(),
-        requestReplyId: String? = null
+        requestReplyId: String? = null,
+        isClearable: Boolean = true,
+        time: Long = System.currentTimeMillis()
     ): String {
         val body = JSONObject()
             .put("id", id)
             .put("appName", appName)
             .put("title", title)
             .put("text", text)
+            .put("ticker", if (title.isNotEmpty() && text.isNotEmpty()) "$title: $text" else title + text)
             .put("isCancel", false)
+            .put("isClearable", isClearable)
+            .put("time", time.toString())
             .put("silent", silent)
         if (actions.isNotEmpty()) {
             val actArr = JSONArray()

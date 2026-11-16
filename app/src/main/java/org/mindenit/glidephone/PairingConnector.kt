@@ -576,6 +576,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val selfId = runCatching { LocalIdentity().loadOrCreate().id }.getOrDefault("")
                 sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
+            ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> {
                 sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversations(app)))
             }

@@ -12,7 +12,29 @@ import androidx.core.content.ContextCompat
 /** Notifies connected computers about incoming/missed/ongoing calls (kdeconnect.telephony). */
 internal object TelephonyReporter {
     @Volatile private var listener: PhoneStateListener? = null
-    @Volatile private var lastState = TelephonyManager.CALL_STATE_IDLE
+    @Volatile private var lastEvent: String? = null
+    @Volatile private var lastName = ""
+    @Volatile private var muted = false
+
+    private fun remember(event: String, name: String, number: String) {
+        lastEvent = event; lastName = name; lastNumber = number
+    }
+
+    /** kdeconnect.telephony.request_mute: silence the ringer for the current call. */
+    fun muteRinger(context: Context) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
+        runCatching {
+            audio.adjustStreamVolume(android.media.AudioManager.STREAM_RING, android.media.AudioManager.ADJUST_MUTE, 0)
+            muted = true
+        }
+    }
+
+    private fun unmuteRinger(context: Context) {
+        if (!muted) return
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
+        runCatching { audio.adjustStreamVolume(android.media.AudioManager.STREAM_RING, android.media.AudioManager.ADJUST_UNMUTE, 0) }
+        muted = false
+    }
     @Volatile private var lastNumber = ""
 
     fun hasPermission(context: Context): Boolean =
@@ -25,25 +47,29 @@ internal object TelephonyReporter {
         val l = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                 val number = phoneNumber?.takeIf { it.isNotBlank() } ?: lastNumber
-                val name = ContactsProvider.nameForNumber(context, number)
+                // Without a matching contact KDE Connect shows the number as the name.
+                val name = ContactsProvider.nameForNumber(context, number).ifBlank { number }
                 when (state) {
                     TelephonyManager.CALL_STATE_RINGING -> {
-                        lastNumber = number
+                        unmuteRinger(context)
+                        remember("ringing", name, number)
                         emit(ProtocolPackets.telephony("ringing", name, number))
                     }
-                    TelephonyManager.CALL_STATE_OFFHOOK -> emit(ProtocolPackets.telephony("talking", name, number))
+                    TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        remember("talking", name, number)
+                        emit(ProtocolPackets.telephony("talking", name, number))
+                    }
                     TelephonyManager.CALL_STATE_IDLE -> {
-                        if (lastState == TelephonyManager.CALL_STATE_IDLE) {
-                            // Initial callback on registration: nothing happened.
-                        } else if (lastState == TelephonyManager.CALL_STATE_RINGING) {
-                            emit(ProtocolPackets.telephony("missedCall", name, number))
-                        } else {
-                            emit(ProtocolPackets.telephony("ringing", name, number, isCancel = true))
-                        }
+                        val event = lastEvent ?: return // nothing was reported (e.g. initial callback)
+                        // Withdraw the last event, then report a missed call if nobody answered.
+                        emit(ProtocolPackets.telephony(event, lastName, lastNumber, isCancel = true))
+                        if (event == "ringing") emit(ProtocolPackets.telephony("missedCall", lastName, lastNumber))
+                        unmuteRinger(context)
+                        lastEvent = null
                         lastNumber = ""
+                        lastName = ""
                     }
                 }
-                lastState = state
             }
         }
         Handler(Looper.getMainLooper()).post {

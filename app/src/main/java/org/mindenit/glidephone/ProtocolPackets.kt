@@ -28,6 +28,7 @@ internal object ProtocolPackets {
     const val TYPE_RUNCOMMAND_REQUEST = "kdeconnect.runcommand.request"
     const val TYPE_CONNECTIVITY_REPORT = "kdeconnect.connectivity_report"
     const val TYPE_TELEPHONY = "kdeconnect.telephony"
+    const val TYPE_TELEPHONY_REQUEST_MUTE = "kdeconnect.telephony.request_mute"
 
     // Presenter & mousepad special keys (matches glide-phone presenter.rs)
     const val KEY_PREV_SLIDE = 8    // Page Up -> 104

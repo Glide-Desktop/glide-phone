@@ -82,6 +82,7 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_SYSTEMVOLUME,
         ProtocolPackets.TYPE_CONTACTS_REQUEST_UIDS,
         ProtocolPackets.TYPE_CONTACTS_REQUEST_VCARDS,
+        ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE,
         ProtocolPackets.TYPE_SMS_REQUEST,
         ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS,
         ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION,

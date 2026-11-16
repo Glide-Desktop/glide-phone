@@ -63,6 +63,7 @@ internal object MediaControl {
         if (body.has("setVolume")) runCatching {
             controller.setVolumeTo(body.optInt("setVolume", 50) * (controller.playbackInfo?.maxVolume ?: 100) / 100, 0)
         }
+        if (body.has("SetPosition")) runCatching { controls.seekTo(body.optLong("SetPosition", 0L)) }
         if (body.has("Seek")) runCatching {
             val cur = controller.playbackState?.position ?: 0L
             controls.seekTo(cur + body.optLong("Seek", 0L) / 1000)

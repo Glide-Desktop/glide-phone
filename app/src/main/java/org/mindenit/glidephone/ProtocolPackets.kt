@@ -144,7 +144,9 @@ internal object ProtocolPackets {
             .put("player", player)
             .put("title", title)
             .put("artist", artist)
+            .put("nowPlaying", title) // older GSConnect only reads this field
             .put("album", album)
+            .put("albumArtUrl", "")
             .put("isPlaying", isPlaying)
             .put("canPlay", canPlay)
             .put("canPause", canPause)

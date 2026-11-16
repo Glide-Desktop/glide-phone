@@ -14,6 +14,7 @@ internal object RemoteNotifications {
     private val counter = java.util.concurrent.atomic.AtomicInteger(1000)
 
     private fun ensureChannel(context: Context) {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
             manager.createNotificationChannel(
@@ -34,8 +35,15 @@ internal object RemoteNotifications {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
+            .setContentIntent(android.app.PendingIntent.getActivity(
+                context, 0, android.content.Intent(context, MainActivity::class.java),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            ))
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(localId, notification) }
+        try {
+            NotificationManagerCompat.from(context).notify(localId, notification)
+        } catch (_: SecurityException) {
+        }
     }
 
     fun cancel(context: Context, key: String) {

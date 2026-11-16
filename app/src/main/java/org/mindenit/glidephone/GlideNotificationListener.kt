@@ -89,7 +89,8 @@ class GlideNotificationListener : NotificationListenerService() {
     }
 
     internal fun sendActiveNotifications() {
-        runCatching { activeNotifications?.forEach { active[it.key] = it; publish(it) } }
+        // A bulk resend must not make the computer alert for every old notification again.
+        runCatching { activeNotifications?.forEach { active[it.key] = it; publish(it, forceSilent = true) } }
     }
 
     /** Fire a non-reply action button a computer tapped. */
@@ -117,7 +118,7 @@ class GlideNotificationListener : NotificationListenerService() {
         if (key.isNotBlank()) runCatching { cancelNotification(key) }
     }
 
-    private fun publish(sbn: StatusBarNotification) {
+    private fun publish(sbn: StatusBarNotification, forceSilent: Boolean = false) {
         val notification = sbn.notification
         // Same exclusions as KDE Connect: nothing persistent, local-only or media-related.
         val unwanted = Notification.FLAG_FOREGROUND_SERVICE or Notification.FLAG_ONGOING_EVENT or
@@ -150,7 +151,7 @@ class GlideNotificationListener : NotificationListenerService() {
                 appName = appName,
                 title = title,
                 text = body,
-                silent = isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0,
+                silent = forceSilent || (isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0),
                 actions = actionTitles,
                 requestReplyId = if (hasReply) sbn.key else null,
                 isClearable = sbn.isClearable,

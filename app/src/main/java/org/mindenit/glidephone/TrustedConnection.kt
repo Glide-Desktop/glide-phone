@@ -96,10 +96,11 @@ internal class TrustedConnection(
 
             if (type == ProtocolPackets.TYPE_PAIR) {
                 val pair = body.opt("pair") as? Boolean ?: true
-                if (!pair) {
-                    trusted.remove(pending.peer.id, identity.id, pending.certificate)
-                    throw IOException("Peer unpaired")
-                }
+                trusted.remove(pending.peer.id, identity.id, pending.certificate)
+                // pair=false is an unpair. pair=true from a device we already trust means it
+                // lost our pairing: KDE Connect unpairs too, so the peer can pair afresh
+                // over a new, untrusted link.
+                throw IOException(if (pair) "Peer requested pairing again" else "Peer unpaired")
             }
 
             onPacketReceived(type, body)

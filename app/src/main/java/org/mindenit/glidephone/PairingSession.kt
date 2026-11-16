@@ -96,7 +96,13 @@ internal class PairingSession(
                 val at = SystemClock.elapsedRealtime()
                 if (active == null) {
                     val timestamp = message.timestampSeconds
-                    if (message.accepted && timestamp != null) {
+                    val nowSeconds = System.currentTimeMillis() / 1000
+                    if (message.accepted && timestamp != null &&
+                        kotlin.math.abs(nowSeconds - timestamp) > MAX_CLOCK_SKEW_SECONDS) {
+                        // Same guard as KDE Connect: a stale or future timestamp is refused.
+                        runCatching { write(PairingPacket.response(false)) }
+                        onAttemptEnded()
+                    } else if (message.accepted && timestamp != null) {
                         state = newState(timestamp, at).also { it.onPeerResponse(true, at) }
                         weInitiated = false
                         localProcessed = false
@@ -127,5 +133,9 @@ internal class PairingSession(
     private fun write(packet: String) {
         pending.socket.outputStream.write(packet.toByteArray(Charsets.UTF_8))
         pending.socket.outputStream.flush()
+    }
+
+    private companion object {
+        const val MAX_CLOCK_SKEW_SECONDS = 1_800L
     }
 }

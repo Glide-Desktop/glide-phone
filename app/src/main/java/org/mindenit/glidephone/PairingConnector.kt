@@ -315,7 +315,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 try {
                     session.run(
                         showCode = { code -> emit(Event.Verify(id, handshake.peer.name, code)) },
-                        onAttemptEnded = { emit(Event.Failed) }
+                        // The user's own cancel is not a failure worth reporting.
+                        onAttemptEnded = { cancelledLocally -> if (!cancelledLocally) emit(Event.Failed) }
                     )
                 } finally {
                     pending.remove(id, entry)

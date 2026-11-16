@@ -36,12 +36,13 @@ internal class PairingSession(
     override fun decide(accept: Boolean) { decision = accept }
 
     @Throws(IOException::class)
-    fun run(showCode: (String) -> Unit, onAttemptEnded: () -> Unit): IncomingHandshake.Pending {
+    fun run(showCode: (String) -> Unit, onAttemptEnded: (cancelledLocally: Boolean) -> Unit): IncomingHandshake.Pending {
         val socket = pending.socket
         val line = ByteArrayOutputStream()
         var state: PairingState? = null
         var weInitiated = false
         var localProcessed = false
+        var cancelledLocally = false
         var success = false
         socket.soTimeout = 250
         try {
@@ -66,7 +67,7 @@ internal class PairingSession(
                     val selected = decision
                     if (!localProcessed && selected != null && current.status == PairingState.Status.WAITING) {
                         localProcessed = true
-                        if (selected) current.confirmLocally(now) else current.reject()
+                        if (selected) current.confirmLocally(now) else { cancelledLocally = true; current.reject() }
                     }
                     when (current.status) {
                         PairingState.Status.CONFIRMED -> break
@@ -75,7 +76,8 @@ internal class PairingSession(
                             state = null
                             weInitiated = false
                             initiateRequested = false
-                            onAttemptEnded()
+                            onAttemptEnded(cancelledLocally)
+                            cancelledLocally = false
                             continue
                         }
                         PairingState.Status.WAITING -> Unit
@@ -101,7 +103,7 @@ internal class PairingSession(
                         kotlin.math.abs(nowSeconds - timestamp) > MAX_CLOCK_SKEW_SECONDS) {
                         // Same guard as KDE Connect: a stale or future timestamp is refused.
                         runCatching { write(PairingPacket.response(false)) }
-                        onAttemptEnded()
+                        onAttemptEnded(false)
                     } else if (message.accepted && timestamp != null) {
                         state = newState(timestamp, at).also { it.onPeerResponse(true, at) }
                         weInitiated = false

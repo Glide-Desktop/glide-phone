@@ -7,6 +7,8 @@ import org.json.JSONObject
 /** Reports this phone's mobile network type and a coarse signal strength (kdeconnect.connectivity_report). */
 internal object ConnectivityReporter {
     fun reportPacket(context: Context): String? {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_PHONE_STATE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return null
         val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return null
         val networkType = runCatching { networkTypeName(tm) }.getOrDefault("Unknown")
         val strength = runCatching { signalBars(tm) }.getOrDefault(-1)
@@ -19,7 +21,11 @@ internal object ConnectivityReporter {
 
     private fun networkTypeName(tm: TelephonyManager): String {
         @Suppress("DEPRECATION")
-        val type = runCatching { tm.dataNetworkType }.getOrDefault(TelephonyManager.NETWORK_TYPE_UNKNOWN)
+        val type = try {
+            tm.dataNetworkType
+        } catch (_: SecurityException) {
+            TelephonyManager.NETWORK_TYPE_UNKNOWN
+        }
         return when (type) {
             TelephonyManager.NETWORK_TYPE_NR -> "5G"
             TelephonyManager.NETWORK_TYPE_LTE -> "LTE"
@@ -32,6 +38,7 @@ internal object ConnectivityReporter {
     }
 
     private fun signalBars(tm: TelephonyManager): Int {
+        if (android.os.Build.VERSION.SDK_INT < 28) return -1
         val ss = tm.signalStrength ?: return -1
         return ss.level // 0..4
     }

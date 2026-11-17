@@ -41,6 +41,9 @@ internal object GlideHub {
         private set
     var volumeSinks by mutableStateOf<Map<String, List<PairingConnector.VolumeSink>>>(emptyMap())
         private set
+    /** Devices whose desktop reported its keyboard as unavailable (mousepad.keyboardstate). */
+    var keyboardDisabled by mutableStateOf<Set<String>>(emptySet())
+        private set
     /** Album art by URL (most recent few only). */
     var mediaArt by mutableStateOf<Map<String, ByteArray>>(emptyMap())
         private set
@@ -103,6 +106,7 @@ internal object GlideHub {
                 mediaPlayers = mediaPlayers - event.id
                 mediaStates = mediaStates.filterKeys { !it.startsWith("${event.id}/") }
                 volumeSinks = volumeSinks - event.id
+                keyboardDisabled = keyboardDisabled - event.id
                 val shown = pairingEvent
                 if (shown is PairingConnector.Event.Connected && shown.id == event.id) pairingEvent = event
                 GlideService.refresh(context)
@@ -157,6 +161,8 @@ internal object GlideHub {
             is PairingConnector.Event.MediaUpdate ->
                 mediaStates = mediaStates + (mediaKey(event.id, event.state.player) to event.state)
             is PairingConnector.Event.VolumeSinks -> volumeSinks = volumeSinks + (event.id to event.sinks)
+            is PairingConnector.Event.KeyboardState ->
+                keyboardDisabled = if (event.enabled) keyboardDisabled - event.id else keyboardDisabled + event.id
             is PairingConnector.Event.MediaArt ->
                 mediaArt = (mediaArt - event.url + (event.url to event.image)).entries.toList().takeLast(12).associate { it.key to it.value }
         }

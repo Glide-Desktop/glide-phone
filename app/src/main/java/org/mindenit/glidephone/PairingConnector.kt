@@ -54,6 +54,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         data class MediaUpdate(val id: String, val state: MediaState) : Event
         data class VolumeSinks(val id: String, val sinks: List<VolumeSink>) : Event
         data class MediaArt(val url: String, val image: ByteArray) : Event
+        data class KeyboardState(val id: String, val enabled: Boolean) : Event
     }
 
     data class RemoteCommand(val key: String, val name: String, val command: String)
@@ -627,22 +628,27 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             runCatching { MediaControl.statePacket(app)?.let { connection.send(it) } }
             if (FeatureId.CLIPBOARD.key in features) {
                 val content = lastClipboardSeen
-                if (!content.isNullOrEmpty() && lastClipboardTime > 0) {
+                if (!content.isNullOrEmpty() && lastClipboardTime > 0 &&
+                    !(lastClipboardSensitive && SetupPreferences(app).skipSensitiveClipboard)) {
                     connection.send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
                 }
             }
         }
     }
 
+    @Volatile private var lastClipboardSensitive = false
+
     private fun onLocalClipboardChanged() {
-        val text = runCatching {
-            (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
-                ?.primaryClip?.getItemAt(0)?.text?.toString()
-        }.getOrNull()
+        val clip = runCatching { (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.primaryClip }.getOrNull()
+        val text = runCatching { clip?.getItemAt(0)?.text?.toString() }.getOrNull()
         if (text.isNullOrEmpty() || text == lastClipboardSeen) return
         lastClipboardSeen = text
         lastClipboardTime = System.currentTimeMillis()
-        if (FeatureId.CLIPBOARD.key in SetupPreferences(app).selectedFeatures()) {
+        // ClipboardListener.detectContentType: password managers flag secrets as sensitive.
+        lastClipboardSensitive = clip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true
+        val preferences = SetupPreferences(app)
+        if (FeatureId.CLIPBOARD.key in preferences.selectedFeatures() &&
+            !(lastClipboardSensitive && preferences.skipSensitiveClipboard)) {
             broadcastPacket(ProtocolPackets.clipboard(text))
         }
     }
@@ -726,6 +732,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
+            ProtocolPackets.TYPE_MOUSEPAD_KEYBOARDSTATE -> emit(Event.KeyboardState(peerId, body.optBoolean("state", true)))
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> {
                 sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversations(app)))
             }
@@ -1001,6 +1008,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendMouseClick(button: String): Boolean = sendPacket(ProtocolPackets.mouseClick(button))
     fun sendMouseScroll(dx: Float, dy: Float): Boolean = sendPacket(ProtocolPackets.mouseScroll(dx, dy))
     fun sendSpecialKey(key: Int): Boolean = sendPacket(ProtocolPackets.presenterSpecialKey(key))
+    fun sendSuperKey(): Boolean = sendPacket(ProtocolPackets.superKey())
 
     /** Types text on the computer one character at a time, as the desktop expects. */
     fun sendType(text: String): Boolean {

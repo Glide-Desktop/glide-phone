@@ -49,15 +49,16 @@ internal object TelephonyReporter {
                 val number = phoneNumber?.takeIf { it.isNotBlank() } ?: lastNumber
                 // Without a matching contact KDE Connect shows the number as the name.
                 val name = ContactsProvider.nameForNumber(context, number).ifBlank { number }
+                val photo = if (state == TelephonyManager.CALL_STATE_IDLE) null else ContactsProvider.photoForNumber(context, number)
                 when (state) {
                     TelephonyManager.CALL_STATE_RINGING -> {
                         unmuteRinger(context)
                         remember("ringing", name, number)
-                        emit(ProtocolPackets.telephony("ringing", name, number))
+                        emit(ProtocolPackets.telephony("ringing", name, number, thumbnail = photo))
                     }
                     TelephonyManager.CALL_STATE_OFFHOOK -> {
                         remember("talking", name, number)
-                        emit(ProtocolPackets.telephony("talking", name, number))
+                        emit(ProtocolPackets.telephony("talking", name, number, thumbnail = photo))
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
                         val event = lastEvent ?: return // nothing was reported (e.g. initial callback)

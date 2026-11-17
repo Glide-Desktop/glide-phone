@@ -214,9 +214,10 @@ internal object ProtocolPackets {
 
     // ---- Telephony ----
 
-    fun telephony(event: String, name: String, number: String, isCancel: Boolean = false): String {
+    fun telephony(event: String, name: String, number: String, isCancel: Boolean = false, thumbnail: String? = null): String {
         val body = JSONObject().put("event", event)
         if (name.isNotBlank()) body.put("contactName", name)
+        if (!thumbnail.isNullOrEmpty()) body.put("phoneThumbnail", thumbnail)
         if (number.isNotBlank()) body.put("phoneNumber", number)
         if (isCancel) body.put("isCancel", true)
         return JSONObject().put("id", System.currentTimeMillis())
@@ -331,6 +332,19 @@ internal object ProtocolPackets {
     const val KEY_BACKSPACE = 1
     const val KEY_TAB = 2
     const val KEY_ENTER = 12
+    const val KEY_LEFT = 4
+    const val KEY_UP = 5
+    const val KEY_RIGHT = 6
+    const val KEY_DOWN = 7
+    const val KEY_ESCAPE = 14
+    const val KEY_SUPER = 20
+
+    /** MousePadPlugin.sendSuper: META_LEFT plus the "super" flag for desktops lacking the key. */
+    fun superKey(): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_MOUSEPAD_REQUEST)
+        .put("body", JSONObject().put("specialKey", KEY_SUPER).put("super", true))
+        .toString() + "\n"
 
     fun shareText(text: String): String = JSONObject()
         .put("id", System.currentTimeMillis())

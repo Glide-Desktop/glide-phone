@@ -37,7 +37,13 @@ internal class SetupPreferences(context: Context) {
         return updated
     }
 
+    /** Don't sync clipboard content Android marks as sensitive (passwords); off by default. */
+    var skipSensitiveClipboard: Boolean
+        get() = preferences.getBoolean(KEY_SKIP_SENSITIVE, false)
+        set(value) { preferences.edit().putBoolean(KEY_SKIP_SENSITIVE, value).apply() }
+
     private companion object {
+        const val KEY_SKIP_SENSITIVE = "clipboard_skip_sensitive"
         const val KEY_COMPLETED = "completed"
         const val KEY_DEVICE_NAME = "device_name"
         const val KEY_FEATURES = "selected_features"

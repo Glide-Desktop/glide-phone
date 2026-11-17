@@ -271,4 +271,14 @@ class ProtocolPacketsTest {
         assertFalse(state.getBoolean("canSeek"))
         assertEquals("u", state.getString("albumArtUrl"))
     }
+
+    @Test
+    fun superKeyThumbnailAndKeyboardState() {
+        val sup = JSONObject(ProtocolPackets.superKey()).getJSONObject("body")
+        assertEquals(20, sup.getInt("specialKey"))
+        assertTrue(sup.getBoolean("super"))
+        val ring = JSONObject(ProtocolPackets.telephony("ringing", "A", "1", thumbnail = "QUJD")).getJSONObject("body")
+        assertEquals("QUJD", ring.getString("phoneThumbnail"))
+        assertTrue(ProtocolPackets.TYPE_MOUSEPAD_KEYBOARDSTATE in IdentityPacket.INCOMING)
+    }
 }

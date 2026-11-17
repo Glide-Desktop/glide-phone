@@ -938,6 +938,14 @@ private fun DetailScreen(
                     Body("Оберіть можливості, якими хочете користуватися при підключенні.")
                     Spacer(Modifier.height(20.dp))
                     FeatureToggleList(selectedFeatures, onFeatureChange)
+                    Spacer(Modifier.height(20.dp))
+                    val prefs = remember { SetupPreferences(context) }
+                    var skipSensitive by remember { mutableStateOf(prefs.skipSensitiveClipboard) }
+                    FeatureToggleRow(
+                        Icons.Outlined.Shield, "Не надсилати паролі",
+                        "Пропускати вміст буфера, позначений як конфіденційний",
+                        skipSensitive
+                    ) { prefs.skipSensitiveClipboard = it; skipSensitive = it }
                 }
                 Detail.ABOUT -> {
                     Body("Glide Phone з’єднує телефон із застосунком Phone Link / KDE Connect на комп’ютері.")
@@ -950,7 +958,7 @@ private fun DetailScreen(
                     InfoCard(Icons.Outlined.Shield, "Наскрізне шифрування", "Сполучення підтверджується кодом на обох пристроях перед обміном даними.")
                 }
                 Detail.PRESENTER -> PresenterDetail(connector, selectedFeatures, onFeatureChange)
-                Detail.REMOTE -> RemoteControlDetail(connector)
+                Detail.REMOTE -> RemoteControlDetail(connector, deviceId)
                 Detail.COMMANDS -> RunCommandDetail(connector, remoteCommands, deviceId)
                 Detail.MEDIA -> MediaDetail(connector, deviceId)
                 Detail.VOLUME -> VolumeDetail(connector, deviceId)
@@ -1120,7 +1128,7 @@ private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands:
 }
 
 @Composable
-private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?) {
+private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?, deviceId: String?) {
     var typed by rememberSaveable { mutableStateOf("") }
     Body("Керуйте вказівником і клавіатурою комп’ютера з телефону.")
     Spacer(Modifier.height(16.dp))
@@ -1178,6 +1186,28 @@ private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?) {
         contentAlignment = Alignment.Center
     ) {
         Text("Ведіть вгору/вниз для прокрутки", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Spacer(Modifier.height(16.dp))
+    SectionLabel("Клавіші")
+    Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            "←" to ProtocolPackets.KEY_LEFT, "↑" to ProtocolPackets.KEY_UP,
+            "↓" to ProtocolPackets.KEY_DOWN, "→" to ProtocolPackets.KEY_RIGHT
+        ).forEach { (label, key) ->
+            OutlinedButton(onClick = { connector?.sendSpecialKey(key) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text(label) }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_ESCAPE) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Esc") }
+        OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_TAB) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Tab") }
+        OutlinedButton(onClick = { connector?.sendSuperKey() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Super") }
+    }
+    if (deviceId != null && deviceId in GlideHub.keyboardDisabled) {
+        Spacer(Modifier.height(16.dp))
+        InfoCard(Icons.Outlined.Keyboard, "Клавіатура недоступна", "Комп’ютер повідомив, що введення з клавіатури зараз вимкнене.")
+        return
     }
     Spacer(Modifier.height(16.dp))
     SectionLabel("Клавіатура")

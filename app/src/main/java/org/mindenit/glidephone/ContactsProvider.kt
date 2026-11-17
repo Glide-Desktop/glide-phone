@@ -68,6 +68,20 @@ internal object ContactsProvider {
         return null
     }
 
+    /** Base64 contact photo for telephony's phoneThumbnail (ContactsHelper.photoId64Encoded). */
+    fun photoForNumber(context: Context, number: String): String? {
+        if (number.isBlank() || !hasPermission(context)) return null
+        return runCatching {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
+            val photo = context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_URI), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            } ?: return null
+            context.contentResolver.openInputStream(Uri.parse(photo))?.use { input ->
+                android.util.Base64.encodeToString(input.readBytes(), android.util.Base64.DEFAULT)
+            }
+        }.getOrNull()
+    }
+
     fun nameForNumber(context: Context, number: String): String {
         if (number.isBlank() || !hasPermission(context)) return ""
         return runCatching {

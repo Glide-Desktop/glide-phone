@@ -234,6 +234,7 @@ private fun GlideApp() {
     val requestAdvanced: () -> Unit = {
         advancedPermissions.launch(arrayOf(
             Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_SMS,
             Manifest.permission.SEND_SMS

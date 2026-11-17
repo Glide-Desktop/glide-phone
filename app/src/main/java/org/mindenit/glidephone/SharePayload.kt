@@ -28,6 +28,8 @@ internal object SharePayload {
 
         fun cancel() { runCatching { server.close() } }
 
+        val isDone: Boolean get() = done.count == 0L
+
         /** Blocks until the peer fetched the whole file (or the transfer failed). */
         fun await(timeoutMs: Long): Boolean =
             done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) && succeeded
@@ -101,6 +103,8 @@ internal object SharePayload {
         val safeName = filename.substringAfterLast('/').substringAfterLast('\\')
             .filterNot { it.isISOControl() }.trim().take(120).ifBlank { "glide-file" }
         var secure: SSLSocket? = null
+        var target: Pair<Uri?, java.io.OutputStream>? = null
+        var complete = false
         return try {
             val raw = java.net.Socket()
             raw.connect(InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS)
@@ -112,8 +116,9 @@ internal object SharePayload {
                 startHandshake()
             }
             val input = secure.inputStream
-            val target = (if (open) null else openInCustomFolder(context, safeName)) ?: openDownload(context, safeName) ?: return null
-            target.second.use { out ->
+            val opened = (if (open) null else openInCustomFolder(context, safeName)) ?: openDownload(context, safeName) ?: return null
+            target = opened
+            opened.second.use { out ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (size < 0 || total < size) {
@@ -125,16 +130,16 @@ internal object SharePayload {
                     onProgress(total)
                 }
                 out.flush()
-                if (size >= 0 && total < size) {
-                    target.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
-                    return null
-                }
+                if (size >= 0 && total < size) return null
             }
-            Received(safeName, target.first)
+            complete = true
+            Received(safeName, opened.first)
         } catch (_: Exception) {
-            null
+            null // includes a cancel thrown from onProgress
         } finally {
             runCatching { secure?.close() }
+            // Never leave a truncated file behind.
+            if (!complete) target?.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
         }
     }
 

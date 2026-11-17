@@ -19,6 +19,18 @@ internal object TransferNotifications {
 
     fun newId(): Int = ids.incrementAndGet()
 
+    private val cancelled: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** ShareBroadcastReceiver.cancelShare: stop the transfer shown as [id]. */
+    fun cancel(id: Int) { cancelled += id }
+    fun isCancelled(id: Int) = id in cancelled
+    fun forget(id: Int) { cancelled -= id }
+
+    /** Thrown from progress callbacks to abort a cancelled transfer. */
+    class Cancelled : java.io.IOException("cancelled")
+
+    fun throwIfCancelled(id: Int) { if (isCancelled(id)) throw Cancelled() }
+
     private fun ensureChannel(context: Context) {
         if (android.os.Build.VERSION.SDK_INT < 26) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -56,11 +68,18 @@ internal object TransferNotifications {
             .setSmallIcon(if (outgoing) android.R.drawable.stat_sys_upload else android.R.drawable.stat_sys_download)
             .setContentText(text)
             .setOngoing(true)
-            .setProgress(100, percent.coerceIn(0, 100), percent < 0))
+            .setProgress(100, percent.coerceIn(0, 100), percent < 0)
+            .addAction(0, "Скасувати", PendingIntent.getBroadcast(context, id,
+                Intent(context, CancelTransferReceiver::class.java).putExtra(CancelTransferReceiver.EXTRA_ID, id)
+                    .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)))
     }
 
     fun finished(context: Context, id: Int, outgoing: Boolean, device: String, count: Int, failed: Int, open: Uri? = null) {
+        val wasCancelled = isCancelled(id)
+        forget(id)
         val title = when {
+            wasCancelled -> if (outgoing) "Надсилання на «$device» скасовано" else "Отримання з «$device» скасовано"
             failed > 0 -> if (outgoing) "Не вдалося надіслати $failed з $count" else "Не вдалося отримати $failed з $count"
             outgoing -> if (count == 1) "Файл надіслано на «$device»" else "Надіслано $count файлів на «$device»"
             else -> if (count == 1) "Файл отримано з «$device»" else "Отримано $count файлів з «$device»"
@@ -83,5 +102,18 @@ internal object TransferNotifications {
             builder.setContentIntent(PendingIntent.getActivity(context, id, view, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         }
         post(context, id, builder)
+    }
+}
+
+
+/** "Cancel" on a transfer notification (CancelShare / ShareBroadcastReceiver). */
+class CancelTransferReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val id = intent.getIntExtra(EXTRA_ID, -1)
+        if (id >= 0) TransferNotifications.cancel(id)
+    }
+
+    companion object {
+        const val EXTRA_ID = "transfer"
     }
 }

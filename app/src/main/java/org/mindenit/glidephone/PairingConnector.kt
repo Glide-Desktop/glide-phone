@@ -964,11 +964,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 downloads.execute {
                     val name = connection.pending.peer.name
                     val index = batch.received + batch.failed + 1
-                    val saved = runCatching {
+                    val saved = if (TransferNotifications.isCancelled(batch.notification)) null else runCatching {
                         SharePayload.receive(
                             app, LocalIdentity().loadOrCreate(), connection.pending.certificate,
                             connection.pending.socket.inetAddress, port, size, filename, open
                         ) { got ->
+                            TransferNotifications.throwIfCancelled(batch.notification)
                             val percent = if (size > 0) (got * 100 / size).toInt() else -1
                             TransferNotifications.progress(app, batch.notification, false, name, filename, index, batch.total, percent)
                         }
@@ -1505,7 +1506,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         files.forEachIndexed { index, file ->
             val ok = runCatching {
                 if (identity == null || connections[peer.id] !== connection) error("disconnected")
+                TransferNotifications.throwIfCancelled(notification)
                 val payload = SharePayload.serve(identity, connection.pending.certificate, file.input, file.size) { sent ->
+                    TransferNotifications.throwIfCancelled(notification)
                     val percent = if (total > 0) ((sentBefore + sent) * 100 / total).toInt() else -1
                     TransferNotifications.progress(app, notification, true, peer.name, file.name, index + 1, files.size, percent)
                 }
@@ -1513,7 +1516,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     file.name, file.size, payload.port, files.size, total, file.lastModified, open && files.size == 1
                 )
                 if (!connection.send(packet)) { payload.cancel(); error("send failed") }
-                payload.await(PAYLOAD_TIMEOUT_MS)
+                // Wait for the computer to fetch it, giving up if the user cancels.
+                val deadline = android.os.SystemClock.elapsedRealtime() + PAYLOAD_TIMEOUT_MS
+                while (!payload.isDone && android.os.SystemClock.elapsedRealtime() < deadline) {
+                    if (TransferNotifications.isCancelled(notification)) { payload.cancel(); break }
+                    payload.await(1_000)
+                }
+                payload.await(5_000)
             }.getOrDefault(false)
             if (!ok) { failed++; runCatching { file.input.close() } }
             if (file.size > 0) sentBefore += file.size

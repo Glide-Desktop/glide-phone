@@ -446,7 +446,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     emit(Event.PeersChanged)
                 }
             }
-            runCatching { trusted.recordProtocolVersion(id, handshake.peer.version) }
+            runCatching { trusted.recordProtocolVersion(id, handshake.peer.version, handshake.peer.name, handshake.peer.type) }
             maintainConnection(handshake, trusted, identity)
         } catch (_: Exception) {
             runCatching { handshake.socket.close() }
@@ -602,6 +602,40 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     }
 
     /** Remove the pairing with a connected device and drop the link. */
+    /** Paired devices, connected or not (KDE lists unreachable paired devices too). */
+    fun pairedDevices(): List<TrustedPeerStore.Paired> = runCatching {
+        TrustedPeerStore(app).paired(LocalIdentity().loadOrCreate().id)
+    }.getOrDefault(emptyList())
+
+    /** Unpair; an offline device is simply forgotten here (it will ask to pair again). */
+    fun forget(id: String) {
+        if (connections.containsKey(id)) { unpair(id); return }
+        try {
+            io.execute {
+                runCatching { TrustedPeerStore(app).forget(id, LocalIdentity().loadOrCreate().id) }
+                runCatching { plugins.clear(id) }
+                runCatching { RunCommandStore.forget(app, id) }
+                DirectShare.forget(app, id)
+                app.getSharedPreferences(QUEUED_URLS, Context.MODE_PRIVATE).edit().remove(id).apply()
+                emit(Event.PeersChanged)
+            }
+        } catch (_: RejectedExecutionException) {
+        }
+    }
+
+    /** ShareActivity.storeUrlForFutureDelivery: links for an offline device go out when it connects. */
+    fun queueUrls(deviceId: String, urls: Collection<String>) {
+        val prefs = app.getSharedPreferences(QUEUED_URLS, Context.MODE_PRIVATE)
+        prefs.edit().putStringSet(deviceId, prefs.getStringSet(deviceId, emptySet()).orEmpty() + urls).apply()
+    }
+
+    private fun deliverQueuedUrls(deviceId: String) {
+        val prefs = app.getSharedPreferences(QUEUED_URLS, Context.MODE_PRIVATE)
+        val urls = prefs.getStringSet(deviceId, null) ?: return
+        urls.forEach { sendPacketTo(deviceId, ProtocolPackets.shareUrl(it)) }
+        prefs.edit().remove(deviceId).apply()
+    }
+
     fun unpair(id: String) {
         val connection = connections[id] ?: return
         try {
@@ -613,6 +647,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 }
                 runCatching { plugins.clear(id) }
                 runCatching { RunCommandStore.forget(app, id) }
+                DirectShare.forget(app, id)
                 runCatching { connection.pending.socket.close() }
             }
         } catch (_: RejectedExecutionException) {
@@ -690,6 +725,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     MediaControl.statePacket(app)?.let(::send)
                 }
                 DevicePlugin.SFTP -> send(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
+                DevicePlugin.SHARE -> if (ProtocolPackets.TYPE_SHARE_REQUEST in connection.pending.peer.incomingCapabilities) deliverQueuedUrls(id)
                 DevicePlugin.REMOTE_KEYBOARD -> if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
                 DevicePlugin.NOTIFICATIONS -> NotificationBridge.refresh()
                 DevicePlugin.CLIPBOARD -> if (FeatureId.CLIPBOARD.key in SetupPreferences(app).selectedFeatures()) {
@@ -1540,6 +1576,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val RATE_LIMIT_MS = 1_000L
         const val ICON_ACCEPT_TIMEOUT_MS = 10_000
         const val MAX_ICON_MISSES = 2
+        const val QUEUED_URLS = "share_queued_urls"
         const val MAX_ART_BYTES = 8L * 1024 * 1024
         val ART_SCHEMES = setOf("http", "https", "file", "kdeconnect")
         const val MAX_UNPAIRED_CONNECTIONS = 42

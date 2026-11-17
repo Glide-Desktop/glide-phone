@@ -123,6 +123,7 @@ internal object GlideHub {
             is PairingConnector.Event.Connected -> {
                 connectedDevices = (connectedDevices.filterNot { it.id == event.id } + RemoteDevice(event.id, event.name))
                     .sortedBy { it.name.lowercase() }
+                DirectShare.connected(context, event.id, event.name)
                 // Only announce connections that finish a pairing the user is watching;
                 // silent auto-reconnects of already paired devices must not pop a dialog.
                 val shown = pairingEvent
@@ -132,6 +133,7 @@ internal object GlideHub {
             }
             is PairingConnector.Event.Disconnected -> {
                 connectedDevices = connectedDevices.filterNot { it.id == event.id }
+                DirectShare.disconnected(context, event.id)
                 peerBatteries = peerBatteries - event.id
                 remoteCommands = remoteCommands - event.id
                 canAddCommand = canAddCommand - event.id

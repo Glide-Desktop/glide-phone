@@ -317,6 +317,11 @@ internal fun MousepadSettingsSection() {
     Slider(settings.scrollSensitivity.toFloat(), { settings.scrollSensitivity = it.toInt(); version++ }, valueRange = 1f..300f)
     Toggle("Подвійне торкання й перетягування", settings.doubleTapDrag) { settings.doubleTapDrag = it; version++ }
     Toggle("Кнопки миші під панеллю", settings.mouseButtons) { settings.mouseButtons = it; version++ }
+    val prefs = remember { SetupPreferences(context) }
+    Toggle("Друкувати поширений текст (text/x-keystrokes)", prefs.sendKeystrokes) { prefs.sendKeystrokes = it; version++ }
+    if (prefs.sendKeystrokes) {
+        Toggle("Коди з цифр надсилати одразу", prefs.sendSafeTextImmediately) { prefs.sendSafeTextImmediately = it; version++ }
+    }
     if (hasGyro) {
         Toggle("Гіроскопічна миша", settings.gyroMouse) { settings.gyroMouse = it; version++ }
         if (settings.gyroMouse) {

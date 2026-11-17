@@ -56,11 +56,36 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
         read().optJSONObject(peerId)?.optInt("protocolVersion", 0) ?: 0
     }
 
-    fun recordProtocolVersion(peerId: String, version: Int) = synchronized(lock) {
+    fun recordProtocolVersion(peerId: String, version: Int, name: String? = null, type: String? = null) = synchronized(lock) {
         val records = read()
         val record = records.optJSONObject(peerId) ?: return@synchronized
-        if (record.optInt("protocolVersion", 0) == version) return@synchronized
+        if (record.optInt("protocolVersion", 0) == version &&
+            (name == null || record.optString("name") == name) && (type == null || record.optString("type") == type)) return@synchronized
         record.put("protocolVersion", version)
+        // Remembered so paired devices can be listed (and shared to) while offline.
+        name?.let { record.put("name", it) }
+        type?.let { record.put("type", it) }
+        write(records)
+    }
+
+    data class Paired(val id: String, val name: String, val type: String)
+
+    /** Every device paired with [localId], with the last name it announced. */
+    fun paired(localId: String): List<Paired> = synchronized(lock) {
+        val records = read()
+        records.keys().asSequence().mapNotNull { id ->
+            val record = records.optJSONObject(id) ?: return@mapNotNull null
+            if (record.optString("localId") != localId) return@mapNotNull null
+            Paired(id, record.optString("name").ifEmpty { id }, record.optString("type").ifEmpty { "desktop" })
+        }.sortedBy { it.name.lowercase() }.toList()
+    }
+
+    /** Forget a device whose certificate we can't present (it is offline): KDE's unpair while unreachable. */
+    fun forget(peerId: String, localId: String) = synchronized(lock) {
+        val records = read()
+        val existing = records.optJSONObject(peerId) ?: return@synchronized
+        check(existing.getString("localId") == localId) { "Local identity changed" }
+        records.remove(peerId)
         write(records)
     }
 

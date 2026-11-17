@@ -773,9 +773,24 @@ private fun DeviceDiscoverySection(
         Spacer(Modifier.height(6.dp))
     }
 
+    // Paired but not reachable now (KDE Connect lists these too, and can forget them).
+    var forgotten by remember { mutableIntStateOf(0) }
+    val offlinePaired = remember(connected, pairingEvent, forgotten) {
+        connector.pairedDevices().filter { paired -> connected.none { it.id == paired.id } }
+    }
+    if (offlinePaired.isNotEmpty()) {
+        SectionLabel("Сполучені, недоступні")
+        Spacer(Modifier.height(8.dp))
+        offlinePaired.forEach { device ->
+            OfflinePairedRow(device.name) { connector.forget(device.id); forgotten++ }
+            Spacer(Modifier.height(10.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+
     // Devices that can be paired: open links first, then anything discovery has seen.
     namesVersion // re-read names when discovery resolves them
-    val connectedIds = connected.map { it.id }.toSet()
+    val connectedIds = connected.map { it.id }.toSet() + offlinePaired.map { it.id }
     val linked = GlideHub.availableDevices.filterNot { it.id in connectedIds }
     val linkedIds = linked.map { it.id }.toSet()
     val discovered = services.filterNot { it in connectedIds || it in linkedIds }.sorted()
@@ -811,6 +826,26 @@ private fun DeviceDiscoverySection(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OfflinePairedRow(name: String, onForget: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, LocalGlideColors.current.cardBorder, RoundedCornerShape(20.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconTile(Icons.Outlined.Laptop)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(4.dp))
+            Text("Не в мережі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = onForget) { Text("Забути") }
     }
 }
 

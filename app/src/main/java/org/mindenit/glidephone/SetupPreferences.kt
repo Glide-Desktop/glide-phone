@@ -119,7 +119,19 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_RUNCOMMAND_NAME_TITLE, true)
         set(value) { preferences.edit().putBoolean(KEY_RUNCOMMAND_NAME_TITLE, value).apply() }
 
+    /** pref_sendkeystrokes_enabled: accept text/x-keystrokes shares. */
+    var sendKeystrokes: Boolean
+        get() = preferences.getBoolean(KEY_SEND_KEYSTROKES, true)
+        set(value) { preferences.edit().putBoolean(KEY_SEND_KEYSTROKES, value).apply() }
+
+    /** pref_send_safe_text_immediately: digits-only codes are typed without asking. */
+    var sendSafeTextImmediately: Boolean
+        get() = preferences.getBoolean(KEY_SAFE_TEXT, true)
+        set(value) { preferences.edit().putBoolean(KEY_SAFE_TEXT, value).apply() }
+
     private companion object {
+        const val KEY_SEND_KEYSTROKES = "pref_sendkeystrokes_enabled"
+        const val KEY_SAFE_TEXT = "pref_send_safe_text_immediately"
         const val KEY_RUNCOMMAND_NAME_TITLE = "set_runcommand_name_as_title"
         const val KEY_MPRIS_KEEP_WATCHING = "mpris_keepwatching_enabled"
         const val KEY_DIGITIZER_HIDE = "digitizer_hide_draw_button"

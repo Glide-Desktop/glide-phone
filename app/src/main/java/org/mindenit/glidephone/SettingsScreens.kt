@@ -32,8 +32,8 @@ internal fun NetworkDetail(connector: PairingConnector?) {
     var allAllowed by remember { mutableStateOf(settings.allNetworksAllowed) }
     var hasPermission by remember { mutableStateOf(settings.hasSsidPermission) }
     var draft by rememberSaveable { mutableStateOf("") }
-    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasPermission = granted
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        hasPermission = settings.hasSsidPermission
         allAllowed = settings.allNetworksAllowed
     }
     fun changed() = connector?.networkSettingsChanged()
@@ -83,7 +83,7 @@ internal fun NetworkDetail(connector: PairingConnector?) {
             checked = allAllowed,
             onCheckedChange = { value ->
                 if (!value && !hasPermission) {
-                    locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                 } else {
                     settings.allNetworksAllowed = value
                     allAllowed = settings.allNetworksAllowed

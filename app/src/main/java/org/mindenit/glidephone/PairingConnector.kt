@@ -210,11 +210,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 ?.registerDefaultNetworkCallback(networkCallback)
         }
         runCatching { TelephonyReporter.start(app) { packet -> broadcastPacket(packet) } }
+        runCatching { ConnectivityReporter.start(app) { packet -> broadcastPacket(packet) } }
     }
 
     fun stopServer() {
         if (!advertising.getAndSet(false)) return
         runCatching { TelephonyReporter.stop(app) }
+        runCatching { ConnectivityReporter.stop(app) }
         runCatching {
             (app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
                 ?.unregisterNetworkCallback(networkCallback)
@@ -235,7 +237,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     /** (Re)start telephony reporting once the READ_PHONE_STATE permission is granted. */
     fun refreshTelephony() {
-        if (advertising.get()) runCatching { TelephonyReporter.start(app) { packet -> broadcastPacket(packet) } }
+        if (!advertising.get()) return
+        runCatching { TelephonyReporter.start(app) { packet -> broadcastPacket(packet) } }
+        runCatching { ConnectivityReporter.start(app) { packet -> broadcastPacket(packet) } }
     }
 
     /** Apply changed network settings (custom hosts, trusted networks). */

@@ -112,9 +112,23 @@ class GlideNotificationListener : NotificationListenerService() {
         runCatching { activeNotifications?.forEach { active[it.key] = it; publish(it, forceSilent = true) } }
     }
 
+    /**
+     * A notification the computer may act on: one we sent it, from an app still allowed. Keys
+     * are predictable, so without this a computer could press buttons in or reply to apps the
+     * user excluded.
+     */
+    private fun shared(key: String, reply: Boolean = false): StatusBarNotification? {
+        if (key !in announced) return null
+        val sbn = active[key] ?: return null
+        val filter = NotificationFilter(this)
+        if (!filter.isEnabled(sbn.packageName)) return null
+        if (reply && filter.blocksContents(sbn.packageName)) return null
+        return sbn
+    }
+
     /** Fire a non-reply action button a computer tapped. */
     internal fun fireAction(key: String, actionTitle: String) {
-        val sbn = active[key] ?: return
+        val sbn = shared(key) ?: return
         val action = sbn.notification.actions?.firstOrNull {
             it.title?.toString() == actionTitle && it.remoteInputs.isNullOrEmpty()
         } ?: return
@@ -123,7 +137,7 @@ class GlideNotificationListener : NotificationListenerService() {
 
     /** Send an inline reply typed on a computer. */
     internal fun fireReply(key: String, message: String) {
-        val sbn = active[key] ?: return
+        val sbn = shared(key, reply = true) ?: return
         val action = sbn.notification.actions?.firstOrNull { !it.remoteInputs.isNullOrEmpty() } ?: return
         val remoteInputs = action.remoteInputs ?: return
         val intent = Intent()
@@ -134,7 +148,7 @@ class GlideNotificationListener : NotificationListenerService() {
     }
 
     internal fun cancelByKey(key: String) {
-        if (key.isNotBlank()) runCatching { cancelNotification(key) }
+        if (shared(key) != null) runCatching { cancelNotification(key) }
     }
 
     private fun publish(sbn: StatusBarNotification, forceSilent: Boolean = false) {
@@ -184,7 +198,7 @@ class GlideNotificationListener : NotificationListenerService() {
         val packetBody = packet.getJSONObject("body")
         if (hideContents) {
             // AppDatabase BLOCK_CONTENTS: only that something arrived, from which app.
-            listOf("title", "text", "ticker", "requestReplyId").forEach { packetBody.remove(it) }
+            listOf("title", "text", "ticker", "requestReplyId", "actions").forEach { packetBody.remove(it) }
         } else {
             addConversation(notification, packetBody)
         }

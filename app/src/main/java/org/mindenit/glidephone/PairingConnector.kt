@@ -87,6 +87,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newCachedThreadPool()
     private val sender = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, ArrayBlockingQueue(128))
+    /** Incoming payloads are fetched strictly one at a time, off the packet-sending thread. */
+    private val downloads = Executors.newSingleThreadExecutor()
     private val generation = AtomicLong()
     private val closed = AtomicBoolean(false)
 
@@ -568,6 +570,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 if (charge in 0..100) emit(Event.PeerBattery(peerId, charge, body.optBoolean("isCharging", false)))
             }
             ProtocolPackets.TYPE_SHARE_REQUEST -> handleShare(peerId, body, FeatureId.FILES.key in features)
+            ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE -> incomingBatches[peerId]?.let { batch ->
+                batch.total = maxOf(batch.total, body.optInt("numberOfFiles", batch.total))
+            }
             ProtocolPackets.TYPE_PING -> emit(Event.PingReceived(peerName, body.optString("message", "Ping!")))
             ProtocolPackets.TYPE_RUNCOMMAND -> {
                 if (body.has("commandList")) emit(Event.CommandList(peerId, parseCommandList(body)))
@@ -638,15 +643,33 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         if (port > 0 && filename.isNotEmpty()) {
             val connection = connections[peerId] ?: return
             val size = body.optLong(ProtocolPackets.KEY_PAYLOAD_SIZE, -1)
+            val count = body.optInt("numberOfFiles", 1).coerceAtLeast(1)
+            val open = body.optBoolean("open", false)
+            // One batch per sender; payloads of a batch arrive one after another.
+            val batch = incomingBatches.compute(peerId) { _, old ->
+                if (old == null || old.received + old.failed >= old.total) IncomingBatch(TransferNotifications.newId(), count)
+                else old.also { it.total = maxOf(it.total, count) }
+            }!!
             try {
-                io.execute {
+                downloads.execute {
+                    val name = connection.pending.peer.name
+                    val index = batch.received + batch.failed + 1
                     val saved = runCatching {
                         SharePayload.receive(
                             app, LocalIdentity().loadOrCreate(), connection.pending.certificate,
                             connection.pending.socket.inetAddress, port, size, filename
-                        )
+                        ) { got ->
+                            val percent = if (size > 0) (got * 100 / size).toInt() else -1
+                            TransferNotifications.progress(app, batch.notification, false, name, filename, index, batch.total, percent)
+                        }
                     }.getOrNull()
-                    emit(Event.FileReceived(peerId, saved ?: filename, saved != null))
+                    if (saved != null) { batch.received++; batch.last = saved.uri } else batch.failed++
+                    emit(Event.FileReceived(peerId, saved?.name ?: filename, saved != null))
+                    if (batch.received + batch.failed >= batch.total) {
+                        TransferNotifications.finished(app, batch.notification, false, name, batch.total, batch.failed,
+                            if (batch.total == 1) batch.last else null)
+                        if (open && saved?.uri != null) openReceived(saved.uri)
+                    }
                 }
             } catch (_: RejectedExecutionException) {
             }
@@ -655,6 +678,17 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val text = body.optString("text").takeIf { it.isNotEmpty() }
         val url = body.optString("url").takeIf { it.isNotEmpty() }
         if (text != null || url != null) emit(Event.ShareReceived(peerId, text, url))
+    }
+
+    private fun openReceived(uri: android.net.Uri) {
+        main.post {
+            runCatching {
+                app.startActivity(
+                    Intent(Intent.ACTION_VIEW).setDataAndType(uri, app.contentResolver.getType(uri))
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
     }
 
     private fun handleMpris(peerId: String, body: JSONObject) {
@@ -862,28 +896,72 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         return if (battery != null) sendPacket(battery.packet()) else false
     }
 
-    /** Send a real file to the target device over an encrypted KDE Connect payload channel. */
-    fun sendFile(uri: android.net.Uri): Boolean {
-        val connection = targetConnection() ?: return false
+    /** Send one file to the target device (see [sendFiles]). */
+    fun sendFile(uri: android.net.Uri): Boolean = sendFiles(listOf(uri))
+
+    /**
+     * Send files to a device one after another over encrypted payload channels, the way
+     * KDE Connect's CompositeUploadFileJob does: every packet carries the batch totals and
+     * the next file is offered only once the previous one has been fetched.
+     */
+    fun sendFiles(uris: List<android.net.Uri>, deviceId: String? = null, open: Boolean = false): Boolean {
+        if (uris.isEmpty()) return false
+        val connection = (if (deviceId != null) connections[deviceId] else targetConnection()) ?: return false
         if (ProtocolPackets.TYPE_SHARE_REQUEST !in connection.pending.peer.incomingCapabilities) return false
+        // Open every stream now: a URI grant from a share intent ends with the activity
+        // that received it, so reading later from a background thread could be refused.
+        val resolver = app.contentResolver
+        val sources = uris.mapNotNull { uri ->
+            runCatching {
+                OutgoingFile(
+                    SharePayload.queryName(resolver, uri) ?: "file",
+                    SharePayload.querySize(resolver, uri),
+                    SharePayload.queryLastModified(resolver, uri),
+                    resolver.openInputStream(uri) ?: error("unreadable")
+                )
+            }.getOrNull()
+        }
+        if (sources.isEmpty()) return false
         return try {
-            io.execute {
-                runCatching {
-                    val identity = LocalIdentity().loadOrCreate()
-                    val resolver = app.contentResolver
-                    val name = SharePayload.queryName(resolver, uri) ?: "file"
-                    val size = SharePayload.querySize(resolver, uri)
-                    val payload = SharePayload.serve(identity, connection.pending.certificate, uri, resolver, size)
-                    if (!sendPacketTo(connection.pending.peer.id, ProtocolPackets.shareFile(name, size, payload.port))) {
-                        payload.cancel()
-                    }
-                }
-            }
+            io.execute { uploadBatch(connection, sources, open, failedToOpen = uris.size - sources.size) }
             true
         } catch (_: RejectedExecutionException) {
+            sources.forEach { runCatching { it.input.close() } }
             false
         }
     }
+
+    private class OutgoingFile(val name: String, val size: Long, val lastModified: Long?, val input: java.io.InputStream)
+
+    private fun uploadBatch(connection: TrustedConnection, files: List<OutgoingFile>, open: Boolean, failedToOpen: Int) {
+        val peer = connection.pending.peer
+        val notification = TransferNotifications.newId()
+        val total = files.filter { it.size > 0 }.sumOf { it.size }
+        var sentBefore = 0L
+        var failed = failedToOpen
+        val identity = runCatching { LocalIdentity().loadOrCreate() }.getOrNull()
+        files.forEachIndexed { index, file ->
+            val ok = runCatching {
+                if (identity == null || connections[peer.id] !== connection) error("disconnected")
+                val payload = SharePayload.serve(identity, connection.pending.certificate, file.input, file.size) { sent ->
+                    val percent = if (total > 0) ((sentBefore + sent) * 100 / total).toInt() else -1
+                    TransferNotifications.progress(app, notification, true, peer.name, file.name, index + 1, files.size, percent)
+                }
+                val packet = ProtocolPackets.shareFile(
+                    file.name, file.size, payload.port, files.size, total, file.lastModified, open && files.size == 1
+                )
+                if (!connection.send(packet)) { payload.cancel(); error("send failed") }
+                payload.await(PAYLOAD_TIMEOUT_MS)
+            }.getOrDefault(false)
+            if (!ok) { failed++; runCatching { file.input.close() } }
+            if (file.size > 0) sentBefore += file.size
+        }
+        TransferNotifications.finished(app, notification, true, peer.name, files.size + failedToOpen, failed)
+    }
+
+    /** Batch totals announced by the sender for the current incoming transfer. */
+    private class IncomingBatch(val notification: Int, var total: Int, var received: Int = 0, var failed: Int = 0, var last: android.net.Uri? = null)
+    private val incomingBatches = ConcurrentHashMap<String, IncomingBatch>()
 
     override fun close() {
         if (closed.getAndSet(true)) return
@@ -899,6 +977,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         connections.values.forEach { runCatching { it.pending.socket.close() } }
         NotificationBridge.detach(this)
         sender.shutdownNow()
+        downloads.shutdownNow()
         io.shutdownNow()
     }
 
@@ -924,5 +1003,6 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val BROADCAST_INTERVAL_MS = 15_000L
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
+        const val PAYLOAD_TIMEOUT_MS = 60L * 60 * 1000
     }
 }

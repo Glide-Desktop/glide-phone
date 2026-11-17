@@ -72,6 +72,7 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_CLIPBOARD_CONNECT,
         ProtocolPackets.TYPE_FINDMYPHONE_REQUEST,
         ProtocolPackets.TYPE_SHARE_REQUEST,
+        ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE,
         ProtocolPackets.TYPE_RUNCOMMAND,
         ProtocolPackets.TYPE_NOTIFICATION,
         ProtocolPackets.TYPE_NOTIFICATION_REQUEST,

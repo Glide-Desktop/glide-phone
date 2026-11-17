@@ -220,4 +220,22 @@ class ProtocolPacketsTest {
         assertTrue(card.contains("X-KDECONNECT-ID-DEV-dev-1:42\r\nREV:1700\r\nEND:VCARD"))
         assertTrue(card.startsWith("BEGIN:VCARD"))
     }
+
+    @Test
+    fun multiFileShareCarriesBatchTotalsAndUpdate() {
+        val packet = JSONObject(ProtocolPackets.shareFile("b.jpg", 10L, 1745, numberOfFiles = 3, totalPayloadSize = 30L, lastModified = 5L, open = false))
+        val body = packet.getJSONObject("body")
+        assertEquals(3, body.getInt("numberOfFiles"))
+        assertEquals(30L, body.getLong("totalPayloadSize"))
+        assertEquals(5L, body.getLong("lastModified"))
+        assertFalse(body.has("open"))
+        assertEquals(10L, packet.getLong("payloadSize"))
+
+        assertTrue(JSONObject(ProtocolPackets.shareFile("a", 1L, 1740, open = true)).getJSONObject("body").getBoolean("open"))
+
+        val update = JSONObject(ProtocolPackets.shareUpdate(4, 40L))
+        assertEquals(ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE, update.getString("type"))
+        assertEquals(4, update.getJSONObject("body").getInt("numberOfFiles"))
+        assertTrue(ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE in IdentityPacket.INCOMING)
+    }
 }

@@ -213,9 +213,9 @@ private fun GlideApp() {
         ))
     }
 
-    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val started = connector.sendFile(uri)
+    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            val started = connector.sendFiles(uris)
             android.widget.Toast.makeText(
                 context,
                 if (started) "Надсилання файлу розпочато" else "Спочатку підключіть пристрій",

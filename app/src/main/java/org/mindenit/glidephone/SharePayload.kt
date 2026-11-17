@@ -21,25 +21,39 @@ import javax.net.ssl.X509TrustManager
  */
 internal object SharePayload {
     class Handle(val port: Int, private val server: ServerSocket) {
+        private val done = java.util.concurrent.CountDownLatch(1)
+        @Volatile internal var succeeded = false
+
+        internal fun finish(success: Boolean) { succeeded = success; done.countDown() }
+
         fun cancel() { runCatching { server.close() } }
+
+        /** Blocks until the peer fetched the whole file (or the transfer failed). */
+        fun await(timeoutMs: Long): Boolean =
+            done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) && succeeded
     }
+
+    /** Result of a completed download. */
+    class Received(val name: String, val uri: Uri?)
 
     fun serve(
         identity: LocalIdentity.Identity,
         peerCertificate: X509Certificate,
-        uri: Uri,
-        resolver: ContentResolver,
-        size: Long
+        source: java.io.InputStream,
+        size: Long,
+        onProgress: (Long) -> Unit = {}
     ): Handle {
         val server = openPayloadServer()
         server.soTimeout = ACCEPT_TIMEOUT_MS
+        lateinit var handle: Handle
         Thread({
+            var ok = false
             server.use {
                 try {
                     val raw = server.accept()
                     val secure = wrapServer(raw, identity, peerCertificate)
                     secure.startHandshake()
-                    resolver.openInputStream(uri)?.use { input ->
+                    source.use { input ->
                         val out = secure.outputStream
                         val buffer = ByteArray(64 * 1024)
                         var sent = 0L
@@ -48,16 +62,23 @@ internal object SharePayload {
                             if (read < 0) break
                             out.write(buffer, 0, read)
                             sent += read
+                            onProgress(sent)
                             if (size in 0 until sent) break
                         }
                         out.flush()
+                        ok = size < 0 || sent >= size
                     }
                     runCatching { secure.close() }
                 } catch (_: Exception) {
                 }
             }
-        }, "GlideSharePayload").apply { isDaemon = true; start() }
-        return Handle(server.localPort, server)
+            runCatching { source.close() }
+            handle.finish(ok)
+        }, "GlideSharePayload").apply { isDaemon = true }.also { thread ->
+            handle = Handle(server.localPort, server)
+            thread.start()
+        }
+        return handle
     }
 
     /**
@@ -71,8 +92,9 @@ internal object SharePayload {
         host: java.net.InetAddress,
         port: Int,
         size: Long,
-        filename: String
-    ): String? {
+        filename: String,
+        onProgress: (Long) -> Unit = {}
+    ): Received? {
         val safeName = filename.substringAfterLast('/').substringAfterLast('\\')
             .filterNot { it.isISOControl() }.trim().take(120).ifBlank { "glide-file" }
         var secure: SSLSocket? = null
@@ -87,7 +109,8 @@ internal object SharePayload {
                 startHandshake()
             }
             val input = secure.inputStream
-            openDownload(context, safeName)?.use { out ->
+            val target = openDownload(context, safeName) ?: return null
+            target.second.use { out ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (size < 0 || total < size) {
@@ -96,11 +119,15 @@ internal object SharePayload {
                     if (read < 0) break
                     out.write(buffer, 0, read)
                     total += read
+                    onProgress(total)
                 }
                 out.flush()
-                if (size >= 0 && total < size) return null
-            } ?: return null
-            safeName
+                if (size >= 0 && total < size) {
+                    target.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+                    return null
+                }
+            }
+            Received(safeName, target.first)
         } catch (_: Exception) {
             null
         } finally {
@@ -108,17 +135,19 @@ internal object SharePayload {
         }
     }
 
-    private fun openDownload(context: android.content.Context, name: String): java.io.OutputStream? {
+    private fun openDownload(context: android.content.Context, name: String): Pair<Uri?, java.io.OutputStream>? {
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
             }
             val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: return null
-            return context.contentResolver.openOutputStream(uri)
+            val out = context.contentResolver.openOutputStream(uri) ?: return null
+            return uri to out
         }
         val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: return null
-        return java.io.File(dir, name).outputStream()
+        val file = java.io.File(dir, name)
+        return null as Uri? to file.outputStream()
     }
 
     @SuppressLint("CustomX509TrustManager")
@@ -143,6 +172,12 @@ internal object SharePayload {
             } else null
         }
     }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
+
+    fun queryLastModified(resolver: ContentResolver, uri: Uri): Long? = runCatching {
+        resolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
+        }
+    }.getOrNull()
 
     fun querySize(resolver: ContentResolver, uri: Uri): Long = runCatching {
         resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->

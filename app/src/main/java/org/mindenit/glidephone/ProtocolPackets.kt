@@ -242,16 +242,34 @@ internal object ProtocolPackets {
 
     // ---- File share (payload channel) ----
 
-    fun shareFile(filename: String, size: Long, port: Int): String = JSONObject()
-        .put("id", System.currentTimeMillis())
-        .put("type", TYPE_SHARE_REQUEST)
-        .put("body", JSONObject()
+    fun shareFile(
+        filename: String,
+        size: Long,
+        port: Int,
+        numberOfFiles: Int = 1,
+        totalPayloadSize: Long = size,
+        lastModified: Long? = null,
+        open: Boolean = false
+    ): String {
+        val body = JSONObject()
             .put("filename", filename)
-            .put("lastModified", System.currentTimeMillis())
-            .put("numberOfFiles", 1)
-            .put("totalPayloadSize", size))
-        .put("payloadSize", size)
-        .put("payloadTransferInfo", JSONObject().put("port", port))
+            .put("numberOfFiles", numberOfFiles)
+            .put("totalPayloadSize", totalPayloadSize)
+        if (lastModified != null && lastModified > 0) body.put("lastModified", lastModified)
+        if (open) body.put("open", true)
+        return JSONObject()
+            .put("id", System.currentTimeMillis())
+            .put("type", TYPE_SHARE_REQUEST)
+            .put("body", body)
+            .put("payloadSize", size)
+            .put("payloadTransferInfo", JSONObject().put("port", port))
+            .toString() + "\n"
+    }
+
+    fun shareUpdate(numberOfFiles: Int, totalPayloadSize: Long): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_SHARE_REQUEST_UPDATE)
+        .put("body", JSONObject().put("numberOfFiles", numberOfFiles).put("totalPayloadSize", totalPayloadSize))
         .toString() + "\n"
 
     // Keys under which TrustedConnection exposes top-level payload metadata to handlers.

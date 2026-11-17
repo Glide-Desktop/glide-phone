@@ -11,7 +11,7 @@ val glideVersionCode: Int = glideVersion.split('.', '-').take(3).mapIndexed { i,
 
 // Release signing: a real key from the environment (CI secrets or a local shell), otherwise
 // the public CI test key in ci/, so builds stay installable and update each other.
-val releaseKeystore: String? = System.getenv("GLIDE_KEYSTORE_FILE")?.takeIf { file(it).exists() }
+val releaseKeystore: String? = System.getenv("GLIDE_KEYSTORE_FILE")?.takeIf { it.isNotBlank() && file(it).exists() }
 
 android {
     namespace = "org.mindenit.glidephone"

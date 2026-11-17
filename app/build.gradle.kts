@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.apache.sshd.sftp)
     implementation(libs.apache.sshd.scp)
     implementation(libs.slf4j.api)
+    // SFTP over SAF folders on Android 8-10 (SafFileSystem)
+    implementation(libs.androidx.documentfile)
     implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

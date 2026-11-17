@@ -47,18 +47,22 @@ import java.security.spec.X509EncodedKeySpec
  * file system (Android 11+, "all files access"). The connected computer logs in as user
  * `kdeconnect` with either its pairing key or a one-time password sent over the link.
  */
-@RequiresApi(Build.VERSION_CODES.R)
+@RequiresApi(Build.VERSION_CODES.O)
 internal class SftpServer(private val context: Context, private val deviceKey: PublicKey) {
     private val sshd: SshServer
     private val storageDirs = mutableListOf<Path>()
+    /** Below Android 11 there is no all-files access: serve SAF folders instead (SimpleSftpServer). */
+    private val saf: SafFileSystemFactory? = if (SftpSupport.nativeFs) null else SafFileSystemFactory(context)
     @Volatile private var passwordHash = ByteArray(0)
 
     init {
         sshd = SshServer.setUpDefaultServer()
-        sshd.fileSystemFactory = NativeStorageFileSystemFactory { storageDirs.toList() }
+        sshd.fileSystemFactory = saf ?: NativeStorageFileSystemFactory { storageDirs.toList() }
         sshd.keyPairProvider = KeyPairProvider.wrap(hostKey(context))
         sshd.commandFactory = ScpCommandFactory()
-        sshd.subsystemFactories = listOf(SftpSubsystemFactory.Builder().withFileSystemAccessor(MediaIndexingAccessor(context)).build())
+        sshd.subsystemFactories = listOf(SftpSubsystemFactory.Builder().apply {
+            if (saf == null) withFileSystemAccessor(MediaIndexingAccessor(context))
+        }.build())
         sshd.publickeyAuthenticator = PublickeyAuthenticator { user, key, _ ->
             user == USER && MessageDigest.isEqual(key.encoded, deviceKey.encoded)
         }
@@ -69,6 +73,10 @@ internal class SftpServer(private val context: Context, private val deviceKey: P
 
     val port: Int get() = sshd.port
     val isStarted: Boolean get() = sshd.isStarted
+
+    fun setSafRoots(storages: List<SftpStorage>) {
+        saf?.setRoots(storages)
+    }
 
     fun setStorageDirs(paths: List<Path>) {
         storageDirs.clear()
@@ -210,7 +218,9 @@ internal class SftpServer(private val context: Context, private val deviceKey: P
 
 /** Capability checks usable on any API level (the server itself needs Android 11+). */
 internal object SftpSupport {
-    val supported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    /** The server runs on Android 8+ (java.nio.file); 11+ serves the whole storage natively. */
+    val supported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+    val nativeFs: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
     fun hasStorageAccess(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
 

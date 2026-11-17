@@ -165,7 +165,7 @@ internal fun DevicePluginsDetail(connector: PairingConnector?, deviceId: String?
 
 /** Enable the accessibility service / IME that let a computer control the phone. */
 @Composable
-internal fun PhoneControlDetail() {
+internal fun PhoneControlDetail(connector: PairingConnector? = null, deviceId: String? = null) {
     val context = LocalContext.current
     val prefs = remember { SetupPreferences(context) }
     var refresh by remember { mutableStateOf(0) }
@@ -197,6 +197,9 @@ internal fun PhoneControlDetail() {
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
     Spacer(Modifier.height(8.dp))
+    if (SftpSupport.supported && !SftpSupport.nativeFs) {
+        SftpFoldersSection(connector, deviceId)
+    }
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
         ServiceRow("Файли телефону для комп’ютера (SFTP)", remember(refresh) { SftpSupport.hasStorageAccess() }) {
             context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -497,4 +500,54 @@ internal fun DigitizerSettings() {
             }
         }
     }
+}
+
+
+/** SftpSettingsFragment on Android 8-10: folders this computer may browse. */
+@Composable
+internal fun SftpFoldersSection(connector: PairingConnector?, deviceId: String?) {
+    val context = LocalContext.current
+    if (deviceId == null) {
+        Text("Підключіть комп’ютер, щоб вибрати папки для нього", style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    var folders by remember(deviceId) { mutableStateOf(SftpStorageList.get(context, deviceId)) }
+    fun save(list: List<SftpStorage>) {
+        SftpStorageList.set(context, deviceId, list)
+        folders = list
+        connector?.sftpStorageChanged(deviceId)
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null && folders.none { it.uri == uri }) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            val name = runCatching {
+                androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
+            }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/') ?: "Папка"
+            // Display names are the top-level directory names over SFTP: keep them unique.
+            var unique = name
+            var n = 2
+            while (folders.any { it.displayName == unique }) unique = "$name ($n)".also { n++ }
+            save(folders + SftpStorage(unique, uri))
+        }
+    }
+    Text("Папки для комп’ютера (SFTP)", style = MaterialTheme.typography.titleMedium)
+    Text("На цій версії Android комп’ютер бачить лише вибрані папки", style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    folders.forEach { folder ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(folder.displayName, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = {
+                runCatching {
+                    context.contentResolver.releasePersistableUriPermission(folder.uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+                save(folders - folder)
+            }) { Icon(androidx.compose.material.icons.Icons.Outlined.Delete, "Прибрати ${folder.displayName}") }
+        }
+    }
+    TextButton(onClick = { picker.launch(null) }) { Text("Додати папку") }
+    Spacer(Modifier.height(8.dp))
 }

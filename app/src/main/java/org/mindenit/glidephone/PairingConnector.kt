@@ -971,21 +971,34 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private fun startSftp(peerId: String) {
         val connection = connections[peerId] ?: return
         fun error(message: String) = sendPacketTo(peerId, ProtocolPackets.sftp(JSONObject().put("errorMessage", message)))
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
-            error("Доступ до файлів потребує Android 11 або новішого"); return
+        if (!SftpSupport.supported) { error("Доступ до файлів потребує Android 8 або новішого"); return }
+        // (path, name) pairs for the packet, and what the server should serve.
+        val entries: List<Pair<String, String>>
+        val safRoots: List<SftpStorage>
+        if (SftpSupport.nativeFs) {
+            if (!SftpSupport.hasStorageAccess()) { error("Надайте Glide Phone доступ до всіх файлів на телефоні"); return }
+            entries = SftpSupport.storageVolumes(app)
+            safRoots = emptyList()
+        } else {
+            val storages = SftpStorageList.get(app, peerId).sortedBy { it.uri.toString() }
+            entries = SftpStorageList.pathsAndNames(storages)
+            safRoots = SftpStorageList.withoutChildren(storages)
         }
-        if (!SftpSupport.hasStorageAccess()) { error("Надайте Glide Phone доступ до всіх файлів на телефоні"); return }
-        val volumes = SftpSupport.storageVolumes(app)
-        if (volumes.isEmpty()) { error("Немає доступних сховищ"); return }
+        if (entries.isEmpty()) {
+            error(if (SftpSupport.nativeFs) "Немає доступних сховищ" else "Додайте папки для комп’ютера в налаштуваннях Glide Phone")
+            return
+        }
         val ip = connection.pending.socket.localAddress?.hostAddress?.substringBefore('%')
         if (ip.isNullOrEmpty()) { error("Не вдалося визначити IP-адресу телефону"); return }
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
         try {
             io.execute {
                 val server = (sftpServers[peerId] as? SftpServer)
                     ?: SftpServer(app, connection.pending.certificate.publicKey).also { sftpServers[peerId] = it }
-                server.setStorageDirs(volumes.map { java.nio.file.Paths.get(it.first) })
+                if (SftpSupport.nativeFs) server.setStorageDirs(entries.map { java.nio.file.Paths.get(it.first) })
+                else server.setSafRoots(safRoots)
                 if (!server.start()) { error("Не вдалося запустити SFTP-сервер"); return@execute }
-                val paths = volumes.map { it.first }
+                val paths = entries.map { it.first }
                 sendPacketTo(peerId, ProtocolPackets.sftp(JSONObject()
                     .put("ip", ip)
                     .put("port", server.port)
@@ -993,7 +1006,21 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     .put("password", server.regeneratePassword())
                     .put("path", if (paths.size == 1) paths[0] else "/")
                     .put("multiPaths", JSONArray(paths))
-                    .put("pathNames", JSONArray(volumes.map { it.second }))))
+                    .put("pathNames", JSONArray(entries.map { it.second }))))
+            }
+        } catch (_: RejectedExecutionException) {
+        }
+    }
+
+    /** SftpPlugin.onSharedPreferenceChanged: a changed folder list restarts a running server. */
+    fun sftpStorageChanged(deviceId: String) {
+        val server = sftpServers[deviceId] ?: return
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
+        if ((server as? SftpServer)?.isStarted != true) return
+        try {
+            io.execute {
+                server.stop()
+                startSftp(deviceId)
             }
         } catch (_: RejectedExecutionException) {
         }
@@ -1001,7 +1028,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     private fun stopSftp(peerId: String) {
         val server = sftpServers.remove(peerId) ?: return
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             runCatching { io.execute { (server as? SftpServer)?.stop() } }
         }
     }
@@ -1474,7 +1501,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         }
         pending.values.forEach { runCatching { it.socket.close() } }
         connections.values.forEach { runCatching { it.pending.socket.close() } }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             sftpServers.values.forEach { (it as? SftpServer)?.let { server -> runCatching { server.stop() } } }
         }
         sftpServers.clear()

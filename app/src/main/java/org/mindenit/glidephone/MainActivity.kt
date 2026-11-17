@@ -1011,7 +1011,7 @@ private fun DetailScreen(
                 Detail.DIGITIZER -> DigitizerDetail(connector)
                 Detail.NETWORK -> NetworkDetail(connector)
                 Detail.DEVICE_PLUGINS -> DevicePluginsDetail(connector, deviceId)
-                Detail.PHONE_CONTROL -> PhoneControlDetail()
+                Detail.PHONE_CONTROL -> PhoneControlDetail(connector, deviceId)
                 Detail.RING -> RingDetail(context, connector, isRinging, onStopAlarm, selectedFeatures, onFeatureChange)
                 Detail.CLIPBOARD -> ClipboardDetail(context, connector, lastClipboard, selectedFeatures, onFeatureChange)
                 Detail.FILES -> FilesDetail(connector, lastShare, selectedFeatures, onFeatureChange)

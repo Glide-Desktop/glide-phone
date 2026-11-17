@@ -212,7 +212,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     // ---- Discoverability (advertise + listen) ----
 
     fun startServer() {
-        if (closed.get() || advertising.getAndSet(true)) return
+        if (GlideHub.offline || closed.get() || advertising.getAndSet(true)) return
         deviceName = SetupPreferences(app).deviceName
         broadcaster = Thread({ serverLoop() }, "GlideServer").apply { isDaemon = true; start() }
         runCatching {

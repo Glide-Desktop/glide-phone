@@ -52,6 +52,32 @@ internal object GlideHub {
 
     @Volatile private var instance: PairingConnector? = null
 
+    /** Instrumented UI tests keep the app off the network so live peers cannot leak in. */
+    @androidx.annotation.VisibleForTesting
+    @Volatile var offline = false
+
+    /** Drop the connector and all observed state (tests run many launches in one process). */
+    @androidx.annotation.VisibleForTesting
+    fun resetForTests() {
+        synchronized(this) { instance?.close(); instance = null }
+        pairingEvent = null
+        connectedDevices = emptyList()
+        availableDevices = emptyList()
+        isPhoneRinging = false
+        lastClipboard = null
+        lastShare = null
+        lastFile = null
+        peerBatteries = emptyMap()
+        remoteCommands = emptyMap()
+        canAddCommand = emptySet()
+        commandOutput = emptyMap()
+        mediaPlayers = emptyMap()
+        mediaStates = emptyMap()
+        volumeSinks = emptyMap()
+        keyboardDisabled = emptySet()
+        mediaArt = emptyMap()
+    }
+
     fun connector(context: Context): PairingConnector {
         instance?.let { return it }
         return synchronized(this) {
@@ -65,6 +91,7 @@ internal object GlideHub {
 
     /** Make the phone discoverable and keep it running in the background. */
     fun goOnline(context: Context) {
+        if (offline) return
         connector(context).startServer()
         runCatching {
             ContextCompat.startForegroundService(context, Intent(context, GlideService::class.java))

@@ -33,6 +33,8 @@ class SetupFlowTest {
 
     @Before
     fun setUp() {
+        GlideHub.offline = true
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync { GlideHub.resetForTests() }
         // The app asks for these on first launch; a system dialog would block the UI under test.
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         listOf("android.permission.POST_NOTIFICATIONS", "android.permission.ACCESS_LOCAL_NETWORK").forEach { permission ->
@@ -48,6 +50,8 @@ class SetupFlowTest {
 
     @After
     fun tearDown() {
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync { GlideHub.resetForTests() }
+        GlideHub.offline = false
         val editor = preferences.edit()
         if (originalCompleted == null) editor.remove("completed") else editor.putBoolean("completed", originalCompleted!!)
         if (originalFeatures == null) editor.remove("selected_features") else editor.putStringSet("selected_features", originalFeatures)

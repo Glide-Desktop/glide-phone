@@ -37,7 +37,9 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
         val name: String,
         val host: String,
         val port: Int,
-        val protocolVersion: Int?
+        val protocolVersion: Int?,
+        /** Announced glideProtocol: a Glide Phone desktop, the only kind this app pairs with. */
+        val glide: Boolean = false,
     )
 
     fun deviceName(id: String): String? = candidates[id]?.name
@@ -96,7 +98,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                         if (peer != null && peer.id != selfId && packet.address.isPrivateLan() && (peer.tcpPort == null || peer.tcpPort in 1716..1764)) {
                             val host = packet.address.hostAddress ?: ""
                             val port = peer.tcpPort ?: 1716
-                            val candidate = Candidate(peer.id, peer.name, host, port, peer.version)
+                            val candidate = Candidate(peer.id, peer.name, host, port, peer.version, peer.isGlide)
                             val prev = candidates.put(peer.id, candidate)
                             if (prev != candidate) {
                                 postUpdate(active = true, failed = false)
@@ -260,7 +262,8 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
     private fun postUpdate(active: Boolean, failed: Boolean) {
         handler.post {
             if (active != running.get()) return@post
-            onUpdate((services.keys + candidates.keys).toSet(), active, failed)
+            // Only Glide Phone desktops are offered; plain KDE Connect peers are not.
+            onUpdate(candidates.filterValues { it.glide }.keys, active, failed)
         }
     }
 

@@ -364,9 +364,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val peer = IdentityPacket.decode(String(packet.data, packet.offset, packet.length, Charsets.UTF_8)) ?: continue
                 if (peer.id == selfId || peer.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION) continue
                 // We own UDP 1716 (a unicast identity reaches only one socket): feed the device list.
-                val seen = NearbyDiscovery.Candidate(peer.id, peer.name, address.hostAddress.orEmpty(), peer.tcpPort ?: 1716, peer.version)
+                val seen = NearbyDiscovery.Candidate(peer.id, peer.name, address.hostAddress.orEmpty(), peer.tcpPort ?: 1716, peer.version, peer.isGlide)
                 udpListeners.forEach { listener -> runCatching { listener(seen) } }
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
+                if (!peer.isGlide) continue // this app talks to Glide Phone desktops only
                 // On an untrusted network only already paired devices may connect.
                 if (!networkSettings.isTrustedNetwork && runCatching {
                         TrustedPeerStore(app).certificate(peer.id, LocalIdentity().loadOrCreate().id)
@@ -416,6 +417,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         try {
             val id = handshake.peer.id
             if (id == identity.id) { handshake.socket.close(); return }
+            // Glide Phone pairs only with Glide Phone desktops (they announce glideProtocol
+            // inside TLS); KDE Connect desktops are for the KDE Connect app.
+            if (!handshake.peer.isGlide) { handshake.socket.close(); return }
             // A trusted device must never come back speaking an older protocol.
             if (handshake.previouslyPinned && trusted.protocolVersion(id) > handshake.peer.version) {
                 handshake.socket.close(); return

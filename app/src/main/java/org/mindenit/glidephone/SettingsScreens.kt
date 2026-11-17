@@ -196,6 +196,13 @@ internal fun PhoneControlDetail() {
         context.startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+    Spacer(Modifier.height(8.dp))
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        ServiceRow("Файли телефону для комп’ютера (SFTP)", remember(refresh) { SftpSupport.hasStorageAccess() }) {
+            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
     Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {

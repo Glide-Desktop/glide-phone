@@ -19,6 +19,8 @@ internal object ProtocolPackets {
     const val TYPE_MOUSEPAD_ECHO = "kdeconnect.mousepad.echo"
     const val TYPE_MOUSEPAD_KEYBOARDSTATE = "kdeconnect.mousepad.keyboardstate"
     const val TYPE_SHAREINPUTDEVICES = "kdeconnect.shareinputdevices"
+    const val TYPE_SFTP = "kdeconnect.sftp"
+    const val TYPE_SFTP_REQUEST = "kdeconnect.sftp.request"
     const val TYPE_SHAREINPUTDEVICES_REQUEST = "kdeconnect.shareinputdevices.request"
     const val TYPE_SHARE_REQUEST = "kdeconnect.share.request"
     const val TYPE_SHARE_REQUEST_UPDATE = "kdeconnect.share.request.update"
@@ -329,6 +331,12 @@ internal object ProtocolPackets {
         return JSONObject().put("id", System.currentTimeMillis())
             .put("type", TYPE_DIGITIZER).put("body", body).toString() + "\n"
     }
+
+    fun sftp(body: JSONObject): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_SFTP)
+        .put("body", body)
+        .toString() + "\n"
 
     /** Ack for a key the computer sent with sendAck (RemoteKeyboardPlugin.sendAck). */
     fun mousepadEcho(request: JSONObject): String {

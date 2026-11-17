@@ -46,6 +46,8 @@ internal enum class DevicePlugin(
         setOf(P.TYPE_NOTIFICATION), setOf(P.TYPE_NOTIFICATION_REQUEST), { false }),
     RUN_COMMAND("Команди", "Запуск команд на комп’ютері",
         setOf(P.TYPE_RUNCOMMAND, P.TYPE_RUNCOMMAND_OUTPUT), setOf(P.TYPE_RUNCOMMAND_REQUEST)),
+    SFTP("Файли телефону", "Перегляд файлів телефону з комп’ютера (SFTP)",
+        setOf(P.TYPE_SFTP_REQUEST), setOf(P.TYPE_SFTP)),
     SHARE("Обмін файлами", "Надсилання й отримання файлів і посилань",
         setOf(P.TYPE_SHARE_REQUEST, P.TYPE_SHARE_REQUEST_UPDATE), setOf(P.TYPE_SHARE_REQUEST)),
     SMS("SMS", "Читання й надсилання SMS з комп’ютера",

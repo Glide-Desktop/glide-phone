@@ -10,3 +10,12 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+# Apache SSHD (SFTP plugin) is loaded reflectively and references JVM-only APIs.
+-keep class org.apache.sshd.** { *; }
+-dontwarn org.apache.sshd.**
+-dontwarn org.slf4j.**
+-dontwarn javax.management.**
+-dontwarn java.lang.management.**
+-dontwarn org.ietf.jgss.**
+-dontwarn net.i2p.crypto.eddsa.**
+-dontwarn org.bouncycastle.**

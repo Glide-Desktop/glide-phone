@@ -302,4 +302,13 @@ class ProtocolPacketsTest {
         assertEquals(3, release.getInt("releaseDeltax"))
         assertTrue(ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST in IdentityPacket.INCOMING)
     }
+
+    @Test
+    fun sftpPacketsAndCapability() {
+        val packet = JSONObject(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
+        assertEquals(ProtocolPackets.TYPE_SFTP, packet.getString("type"))
+        assertFalse(packet.getJSONObject("body").getBoolean("serverRunning"))
+        assertTrue(ProtocolPackets.TYPE_SFTP_REQUEST in IdentityPacket.INCOMING)
+        assertTrue(ProtocolPackets.TYPE_SFTP in IdentityPacket.OUTGOING)
+    }
 }

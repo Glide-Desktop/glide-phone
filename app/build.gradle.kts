@@ -34,6 +34,12 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources {
+            // Apache SSHD jars all ship the same license/notice metadata.
+            excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
+        }
+    }
 }
 
 dependencies {
@@ -41,6 +47,11 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
+    // SFTP plugin (same Apache SSHD version as KDE Connect)
+    implementation(libs.apache.sshd.core)
+    implementation(libs.apache.sshd.sftp)
+    implementation(libs.apache.sshd.scp)
+    implementation(libs.slf4j.api)
     implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

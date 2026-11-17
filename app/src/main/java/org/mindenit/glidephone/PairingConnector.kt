@@ -203,7 +203,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     val isRinging: Boolean
         get() = AlarmPlayer.isPlaying
 
-    fun stopAlarm() = AlarmPlayer.stop()
+    fun stopAlarm() {
+        AlarmPlayer.stop()
+        FindMyPhone.hideNotification(app)
+    }
 
     // ---- Discoverability (advertise + listen) ----
 
@@ -660,7 +663,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         when (type) {
             ProtocolPackets.TYPE_FINDMYPHONE_REQUEST -> {
                 if (FeatureId.RING.key in features) {
-                    AlarmPlayer.start(app)
+                    main.post { FindMyPhone.ring(app, peerName) }
                     emit(Event.RingRequest(peerName))
                 }
             }

@@ -21,6 +21,8 @@ internal object GlideHub {
     var availableDevices by mutableStateOf<List<RemoteDevice>>(emptyList())
         private set
     var isPhoneRinging by mutableStateOf(false)
+    /** True while one of our activities is visible (FindMyPhone picks screen vs notification). */
+    @Volatile var inForeground = false
     var lastClipboard by mutableStateOf<String?>(null)
         private set
     var lastShare by mutableStateOf<PairingConnector.Event.ShareReceived?>(null)

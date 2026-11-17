@@ -97,6 +97,16 @@ import org.mindenit.glidephone.ui.theme.LocalGlideColors
 // ---------------------------------------------------------------------------
 
 class MainActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        GlideHub.inForeground = true
+    }
+
+    override fun onStop() {
+        GlideHub.inForeground = false
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -1268,6 +1278,34 @@ private fun ColumnScope.RingDetail(
         Text(if (isRinging || testingAlarm) "Зупинити сигнал на телефоні" else "Тестовий дзвінок на цьому телефоні")
     }
     Spacer(Modifier.height(20.dp))
+    val prefs = remember { SetupPreferences(context) }
+    var ringtone by remember { mutableStateOf(prefs.findMyPhoneRingtone) }
+    var flashlight by remember { mutableStateOf(prefs.findMyPhoneFlashlight) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        @Suppress("DEPRECATION")
+        val uri = result.data?.getParcelableExtra<android.net.Uri>(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            prefs.findMyPhoneRingtone = uri?.toString()
+            ringtone = prefs.findMyPhoneRingtone
+        }
+    }
+    val ringtoneName = remember(ringtone) {
+        runCatching {
+            android.media.RingtoneManager.getRingtone(context, ringtone?.let(android.net.Uri::parse) ?: android.provider.Settings.System.DEFAULT_RINGTONE_URI)
+                ?.getTitle(context)
+        }.getOrNull() ?: "Типова мелодія"
+    }
+    FeatureNavRow(Icons.Outlined.NotificationsActive, "Мелодія", ringtoneName) {
+        picker.launch(Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER)
+            .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_ALL)
+            .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ringtone?.let(android.net.Uri::parse)))
+    }
+    Spacer(Modifier.height(10.dp))
+    FeatureToggleRow(Icons.Outlined.Lightbulb, "Блимати ліхтариком", "Під час дзвінка вмикати й вимикати спалах", flashlight) {
+        prefs.findMyPhoneFlashlight = it; flashlight = it
+    }
+    Spacer(Modifier.height(10.dp))
     FeatureToggleRow(feature.icon, feature.title, feature.description, feature.id in selectedFeatures) { onFeatureChange(feature.id, it) }
 }
 

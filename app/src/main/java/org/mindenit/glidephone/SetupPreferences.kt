@@ -42,7 +42,18 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_SKIP_SENSITIVE, false)
         set(value) { preferences.edit().putBoolean(KEY_SKIP_SENSITIVE, value).apply() }
 
+    /** Ringtone URI for find-my-phone; null means the default ringtone. */
+    var findMyPhoneRingtone: String?
+        get() = preferences.getString(KEY_RINGTONE, null)?.takeIf { it.isNotEmpty() }
+        set(value) { preferences.edit().putString(KEY_RINGTONE, value).apply() }
+
+    var findMyPhoneFlashlight: Boolean
+        get() = preferences.getBoolean(KEY_FLASHLIGHT, false)
+        set(value) { preferences.edit().putBoolean(KEY_FLASHLIGHT, value).apply() }
+
     private companion object {
+        const val KEY_RINGTONE = "findmyphone_ringtone"
+        const val KEY_FLASHLIGHT = "findmyphone_flashlight"
         const val KEY_SKIP_SENSITIVE = "clipboard_skip_sensitive"
         const val KEY_COMPLETED = "completed"
         const val KEY_DEVICE_NAME = "device_name"

@@ -51,7 +51,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_FLASHLIGHT, false)
         set(value) { preferences.edit().putBoolean(KEY_FLASHLIGHT, value).apply() }
 
+    /** RemoteKeyboardIMEPlugin "editing only": type through our IME only while it is shown. */
+    var remoteKeyboardEditingOnly: Boolean
+        get() = preferences.getBoolean(KEY_EDITING_ONLY, true)
+        set(value) { preferences.edit().putBoolean(KEY_EDITING_ONLY, value).apply() }
+
     private companion object {
+        const val KEY_EDITING_ONLY = "remotekeyboard_editing_only"
         const val KEY_RINGTONE = "findmyphone_ringtone"
         const val KEY_FLASHLIGHT = "findmyphone_flashlight"
         const val KEY_SKIP_SENSITIVE = "clipboard_skip_sensitive"

@@ -18,6 +18,8 @@ internal object ProtocolPackets {
     const val TYPE_MOUSEPAD_REQUEST = "kdeconnect.mousepad.request"
     const val TYPE_MOUSEPAD_ECHO = "kdeconnect.mousepad.echo"
     const val TYPE_MOUSEPAD_KEYBOARDSTATE = "kdeconnect.mousepad.keyboardstate"
+    const val TYPE_SHAREINPUTDEVICES = "kdeconnect.shareinputdevices"
+    const val TYPE_SHAREINPUTDEVICES_REQUEST = "kdeconnect.shareinputdevices.request"
     const val TYPE_SHARE_REQUEST = "kdeconnect.share.request"
     const val TYPE_SHARE_REQUEST_UPDATE = "kdeconnect.share.request.update"
     const val TYPE_MPRIS = "kdeconnect.mpris"
@@ -327,6 +329,27 @@ internal object ProtocolPackets {
         return JSONObject().put("id", System.currentTimeMillis())
             .put("type", TYPE_DIGITIZER).put("body", body).toString() + "\n"
     }
+
+    /** Ack for a key the computer sent with sendAck (RemoteKeyboardPlugin.sendAck). */
+    fun mousepadEcho(request: JSONObject): String {
+        val body = JSONObject().put("key", request.optString("key")).put("isAck", true)
+        listOf("specialKey", "shift", "ctrl", "alt", "super").forEach { key -> if (request.has(key)) body.put(key, request.get(key)) }
+        return JSONObject().put("id", System.currentTimeMillis())
+            .put("type", TYPE_MOUSEPAD_ECHO).put("body", body).toString() + "\n"
+    }
+
+    fun keyboardState(state: Boolean): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_MOUSEPAD_KEYBOARDSTATE)
+        .put("body", JSONObject().put("state", state))
+        .toString() + "\n"
+
+    /** InputDevicesReceiver.release: hand the cursor back to the computer. */
+    fun shareInputDevicesRelease(dx: Int, dy: Int): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_SHAREINPUTDEVICES)
+        .put("body", JSONObject().put("releaseDeltax", dx).put("releaseDeltay", dy))
+        .toString() + "\n"
 
     // Mousepad special keys (KDE Connect SpecialKeysMap)
     const val KEY_BACKSPACE = 1

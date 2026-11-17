@@ -162,3 +162,72 @@ internal fun DevicePluginsDetail(connector: PairingConnector?, deviceId: String?
         Spacer(Modifier.height(8.dp))
     }
 }
+
+/** Enable the accessibility service / IME that let a computer control the phone. */
+@Composable
+internal fun PhoneControlDetail() {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var refresh by remember { mutableStateOf(0) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refresh++
+        }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
+    refresh // re-read service state after returning from system settings
+    val accessibilityOn = GlideAccessibilityService.instance != null
+    val imeEnabled = remember(refresh) {
+        context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            ?.enabledInputMethodList?.any { it.packageName == context.packageName } == true
+    }
+    var editingOnly by remember { mutableStateOf(prefs.remoteKeyboardEditingOnly) }
+
+    Body("Дозвольте підключеному комп’ютеру рухати вказівник, натискати й друкувати на цьому телефоні.")
+    Spacer(Modifier.height(16.dp))
+    ServiceRow("Миша й клавіатура (спеціальні можливості)", accessibilityOn) {
+        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    Spacer(Modifier.height(8.dp))
+    ServiceRow("Клавіатура Glide Phone (метод введення)", imeEnabled) {
+        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Лише під час редагування", style = MaterialTheme.typography.titleMedium)
+            Text("Клавіатура Glide Phone друкує, тільки коли вона відкрита", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(
+            checked = editingOnly,
+            onCheckedChange = {
+                prefs.remoteKeyboardEditingOnly = it
+                editingOnly = it
+                RemoteInput.keyboardAvailabilityChanged(context)
+            },
+            modifier = Modifier.semantics { contentDescription = "Лише під час редагування" }
+        )
+    }
+}
+
+@Composable
+private fun ServiceRow(title: String, enabled: Boolean, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .border(1.dp, LocalGlideColors.current.cardBorder, RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(if (enabled) "Увімкнено" else "Вимкнено", style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) LocalGlideColors.current.connectedDot else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = onOpen) { Text("Налаштувати") }
+    }
+}

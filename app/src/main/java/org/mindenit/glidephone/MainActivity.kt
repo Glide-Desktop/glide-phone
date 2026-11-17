@@ -143,6 +143,7 @@ internal enum class Detail(val title: String, val icon: ImageVector) {
     DIGITIZER("Графічний планшет", Icons.Outlined.Draw),
     NETWORK("Мережа", Icons.Outlined.Lan),
     DEVICE_PLUGINS("Плагіни пристрою", Icons.Outlined.Extension),
+    PHONE_CONTROL("Керування телефоном", Icons.Outlined.Mouse),
     SETTINGS("Можливості", Icons.Outlined.Tune),
     PRIVACY("Приватність", Icons.Outlined.Shield),
     ABOUT("Про застосунок", Icons.Outlined.Info)
@@ -915,6 +916,7 @@ private fun MeScreen(deviceName: String, onRename: (String) -> Unit, onDetail: (
             FeatureNavRow(Icons.Outlined.Tune, "Можливості", "Вибір функцій для підключення") { onDetail(Detail.SETTINGS) }
             FeatureNavRow(Icons.Outlined.PhonelinkRing, "Телефонія, контакти та SMS", "Надати доступ для синхронізації з комп’ютером", trailing = Icons.AutoMirrored.Outlined.KeyboardArrowRight) { onAdvanced() }
             FeatureNavRow(Icons.Outlined.Lan, "Мережа", "Пристрої за адресою та довірені мережі") { onDetail(Detail.NETWORK) }
+            FeatureNavRow(Icons.Outlined.Mouse, "Керування телефоном", "Комп’ютер керує телефоном мишею й клавіатурою") { onDetail(Detail.PHONE_CONTROL) }
             FeatureNavRow(Icons.Outlined.Shield, "Приватність", "Дозволи та доступ до даних") { onDetail(Detail.PRIVACY) }
             FeatureNavRow(Icons.Outlined.Info, "Про застосунок", "Інформація про Glide Phone") { onDetail(Detail.ABOUT) }
         }
@@ -978,6 +980,7 @@ private fun DetailScreen(
                 Detail.DIGITIZER -> DigitizerDetail(connector)
                 Detail.NETWORK -> NetworkDetail(connector)
                 Detail.DEVICE_PLUGINS -> DevicePluginsDetail(connector, deviceId)
+                Detail.PHONE_CONTROL -> PhoneControlDetail()
                 Detail.RING -> RingDetail(context, connector, isRinging, onStopAlarm, selectedFeatures, onFeatureChange)
                 Detail.CLIPBOARD -> ClipboardDetail(context, connector, lastClipboard, selectedFeatures, onFeatureChange)
                 Detail.FILES -> FilesDetail(connector, lastShare, selectedFeatures, onFeatureChange)

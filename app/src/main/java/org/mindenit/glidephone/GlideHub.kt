@@ -61,6 +61,8 @@ internal object GlideHub {
         }
     }
 
+    fun connectorIfCreated(): PairingConnector? = instance
+
     /** Make the phone discoverable and keep it running in the background. */
     fun goOnline(context: Context) {
         connector(context).startServer()

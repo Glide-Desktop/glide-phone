@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Glide Phone</string>
+    <string name="remote_input_service_description">Дозволяє підключеному комп’ютеру керувати телефоном мишею та клавіатурою через Glide Phone.</string>
+    <string name="remote_keyboard_name">Клавіатура Glide Phone</string>
 </resources>

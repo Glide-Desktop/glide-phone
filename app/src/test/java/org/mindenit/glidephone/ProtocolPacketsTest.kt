@@ -289,4 +289,17 @@ class ProtocolPacketsTest {
         IdentityPacket.INCOMING.forEach { assertTrue("no plugin receives $it", it in incoming) }
         IdentityPacket.OUTGOING.forEach { assertTrue("no plugin sends $it", it in outgoing) }
     }
+
+    @Test
+    fun remoteInputReplies() {
+        val echo = JSONObject(ProtocolPackets.mousepadEcho(JSONObject().put("key", "a").put("shift", true).put("sendAck", true)))
+        assertEquals(ProtocolPackets.TYPE_MOUSEPAD_ECHO, echo.getString("type"))
+        assertTrue(echo.getJSONObject("body").getBoolean("isAck"))
+        assertTrue(echo.getJSONObject("body").getBoolean("shift"))
+        assertFalse(echo.getJSONObject("body").has("sendAck"))
+        assertFalse(JSONObject(ProtocolPackets.keyboardState(false)).getJSONObject("body").getBoolean("state"))
+        val release = JSONObject(ProtocolPackets.shareInputDevicesRelease(3, 0)).getJSONObject("body")
+        assertEquals(3, release.getInt("releaseDeltax"))
+        assertTrue(ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST in IdentityPacket.INCOMING)
+    }
 }

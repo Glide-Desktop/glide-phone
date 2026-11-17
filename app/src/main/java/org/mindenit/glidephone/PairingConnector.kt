@@ -556,6 +556,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun isPluginEnabled(deviceId: String, plugin: DevicePlugin) = plugins.isEnabled(deviceId, plugin)
 
+    fun broadcastKeyboardState(available: Boolean) {
+        broadcastPacket(ProtocolPackets.keyboardState(available))
+    }
+
     fun setPluginEnabled(deviceId: String, plugin: DevicePlugin, enabled: Boolean) {
         plugins.setEnabled(deviceId, plugin, enabled)
         // Re-run the plugin's onCreate requests (e.g. ask for notifications) right away.
@@ -645,6 +649,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 .put("type", ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
                 .put("body", JSONObject().put("request", true)).toString() + "\n")
             runCatching { ConnectivityReporter.reportPacket(app)?.let(::send) }
+            // RemoteKeyboardPlugin.onCreate announces the keyboard when it can type.
+            if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
             runCatching { send(MediaControl.playerListPacket(app)) }
             runCatching { MediaControl.statePacket(app)?.let(::send) }
             if (FeatureId.CLIPBOARD.key in features) {
@@ -755,6 +761,23 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             }
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
             ProtocolPackets.TYPE_MOUSEPAD_KEYBOARDSTATE -> emit(Event.KeyboardState(peerId, body.optBoolean("state", true)))
+            ProtocolPackets.TYPE_MOUSEPAD_REQUEST -> {
+                val release: (Int, Int) -> Unit = { dx, dy ->
+                    if (plugins.isEnabled(peerId, DevicePlugin.INPUT_DEVICES)) {
+                        sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(dx, dy))
+                    }
+                }
+                if (RemoteInput.isKeyboardPacket(body)) {
+                    if (plugins.isEnabled(peerId, DevicePlugin.REMOTE_KEYBOARD)) {
+                        RemoteInput.handleKeyboard(app, body) { echo -> sendPacketTo(peerId, echo) }
+                    }
+                } else if (plugins.isEnabled(peerId, DevicePlugin.MOUSE_RECEIVER) || plugins.isEnabled(peerId, DevicePlugin.INPUT_DEVICES)) {
+                    RemoteInput.handleMouse(body, release)
+                }
+            }
+            ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST -> RemoteInput.handleShareInputDevices(body) { dx, dy ->
+                sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(dx, dy))
+            }
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> {
                 sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversations(app)))
             }

@@ -71,6 +71,15 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
     data class Paired(val id: String, val name: String, val type: String, val macs: List<String> = emptyList(),
                       val lastAddress: String? = null)
 
+    /** Where a paired device was last connected from. */
+    fun recordAddress(peerId: String, address: String) = synchronized(lock) {
+        val records = read()
+        val record = records.optJSONObject(peerId) ?: return@synchronized
+        if (record.optString("lastAddress") == address) return@synchronized
+        record.put("lastAddress", address)
+        write(records)
+    }
+
     /** Wake-on-LAN data a Glide desktop sent (glide.wol) and where it was last seen. */
     fun recordWake(peerId: String, macs: List<String>, address: String?) = synchronized(lock) {
         val records = read()

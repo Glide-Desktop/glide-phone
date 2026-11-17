@@ -312,9 +312,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     Thread({ udpLoop(socket) }, "GlideServer-Udp").apply { isDaemon = true; start() }
                 }
             }
-            // Peers open a fresh link for every identity broadcast they receive, so only
-            // announce when it is needed: on start, and while nobody is linked to us.
-            if (first || (connections.isEmpty() && pending.isEmpty())) broadcastNow()
+            // Announce on start, while nobody is linked to us, and while a paired computer is
+            // away (Glide desktops skip peers they're already linked to); a computer that is
+            // away also gets the identity at its last address, since routers drop broadcasts.
+            val away = runCatching { pairedDevices().filter { !connections.containsKey(it.id) } }.getOrDefault(emptyList())
+            if (first || (connections.isEmpty() && pending.isEmpty()) || away.isNotEmpty()) {
+                broadcastNow(away.mapNotNull { it.lastAddress })
+            }
             first = false
             try { Thread.sleep(BROADCAST_INTERVAL_MS) } catch (_: InterruptedException) { break }
         }
@@ -459,13 +463,14 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 }
             }
             runCatching { trusted.recordProtocolVersion(id, handshake.peer.version, handshake.peer.name, handshake.peer.type) }
+            runCatching { handshake.socket.inetAddress?.hostAddress?.let { trusted.recordAddress(id, it) } }
             maintainConnection(handshake, trusted, identity)
         } catch (_: Exception) {
             runCatching { handshake.socket.close() }
         }
     }
 
-    private fun broadcastNow() {
+    private fun broadcastNow(extra: List<String> = emptyList()) {
         val port = server?.takeIf { !it.isClosed }?.localPort ?: return
         try {
             io.execute {
@@ -475,7 +480,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     val custom = networkSettings.resolveCustomDevices()
                     customAddresses = custom.toSet()
                     // Broadcast only on a trusted network; manually added hosts always get a copy.
-                    val targets = (if (networkSettings.isTrustedNetwork) broadcastTargets() else emptyList()) + custom
+                    // Paired computers that are away get one at their last address too.
+                    val last = extra.mapNotNull { runCatching { InetAddress.getByName(it) }.getOrNull() }
+                        .filter { it.isPrivateLan() }
+                    val targets = (if (networkSettings.isTrustedNetwork) broadcastTargets() else emptyList()) + custom + last
                     DatagramSocket().use { udp ->
                         udp.broadcast = true
                         targets.forEach { addr ->

@@ -29,9 +29,12 @@ class ClipboardFloatingActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus) return
-        GlideHub.connectorIfCreated()?.pushClipboardNow()
+        // From the tile the process may be fresh: bring the connector up first.
+        GlideHub.goOnline(this)
+        val connector = GlideHub.connector(this)
+        val sent = connector.pushClipboardNow()
         if (intent.getBooleanExtra(EXTRA_SHOW_TOAST, false)) {
-            Toast.makeText(this, "Буфер обміну надіслано", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (sent) "Буфер обміну надіслано" else "Немає підключених пристроїв", Toast.LENGTH_SHORT).show()
         }
         finish()
     }

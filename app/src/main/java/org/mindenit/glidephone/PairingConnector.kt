@@ -694,21 +694,27 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     internal val clipboardSnapshot: String? get() = lastClipboardSeen
 
     /** Read the clipboard now (call while focused, e.g. from ClipboardFloatingActivity). */
-    fun pushClipboardNow() = onLocalClipboardChanged()
+    fun pushClipboardNow(): Boolean = onLocalClipboardChanged(force = true)
 
-    private fun onLocalClipboardChanged() {
+    /** Returns whether the clipboard went to at least one device. */
+    private fun onLocalClipboardChanged(force: Boolean = false): Boolean {
         val clip = runCatching { (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.primaryClip }.getOrNull()
-        val text = runCatching { clip?.getItemAt(0)?.text?.toString() }.getOrNull()
-        if (text.isNullOrEmpty() || text == lastClipboardSeen) return
+        val text = runCatching { clip?.getItemAt(0)?.coerceToText(app)?.toString() }.getOrNull()
+        if (text.isNullOrEmpty()) return false
+        // A manual send repeats the same content on purpose; automatic sync does not.
+        if (text == lastClipboardSeen && !force) return false
+        val changed = text != lastClipboardSeen
         lastClipboardSeen = text
+        if (changed) lastClipboardTime = System.currentTimeMillis()
         lastClipboardTime = System.currentTimeMillis()
         // ClipboardListener.detectContentType: password managers flag secrets as sensitive.
         lastClipboardSensitive = clip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true
         val preferences = SetupPreferences(app)
         if (FeatureId.CLIPBOARD.key in preferences.selectedFeatures() &&
             !(lastClipboardSensitive && preferences.skipSensitiveClipboard)) {
-            broadcastPacket(ProtocolPackets.clipboard(text))
+            return broadcastPacket(ProtocolPackets.clipboard(text))
         }
+        return false
     }
 
     // ---- Incoming packet handling ----

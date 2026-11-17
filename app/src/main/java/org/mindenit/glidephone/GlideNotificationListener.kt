@@ -215,10 +215,31 @@ class GlideNotificationListener : NotificationListenerService() {
     }
 
     /** PNG icon (large icon, else small icon) and its MD5, as NotificationsPlugin.extractIcon. */
+    /** Candidate pictures of the person or group a notification is about, best first. */
+    private fun avatarIcons(notification: Notification): List<android.graphics.drawable.Icon> {
+        val out = mutableListOf<android.graphics.drawable.Icon>()
+        notification.getLargeIcon()?.let(out::add)
+        // Group chats (Android 11+ conversations) carry the group picture here.
+        @Suppress("DEPRECATION")
+        (notification.extras.getParcelable<android.os.Parcelable>("android.conversationIcon")
+            as? android.graphics.drawable.Icon)?.let(out::add)
+        runCatching {
+            val style = androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
+            // In a direct chat the newest incoming sender is the other person.
+            style?.messages?.asReversed()?.firstNotNullOfOrNull { it.person?.icon }
+                ?.let { out.add(it.toIcon(this)) }
+        }
+        return out
+    }
+
     private fun extractIcon(sbn: StatusBarNotification): Pair<ByteArray, String>? {
         val notification = sbn.notification
         val foreign = createPackageContext(sbn.packageName, 0)
-        val drawable = (notification.getLargeIcon() ?: notification.smallIcon)?.loadDrawable(foreign) ?: return null
+        // The contact's picture first: messengers often put it only on the conversation or
+        // on the sender Person (MessagingStyle), not in largeIcon; the app icon is the last resort.
+        val drawable = avatarIcons(notification).firstNotNullOfOrNull { icon ->
+            runCatching { icon.loadDrawable(foreign) ?: icon.loadDrawable(this) }.getOrNull()
+        } ?: notification.smallIcon?.loadDrawable(foreign) ?: return null
         val size = if (drawable.intrinsicWidth in 65..128 && drawable.intrinsicHeight in 65..128)
             drawable.intrinsicWidth to drawable.intrinsicHeight else 96 to 96
         val bitmap = android.graphics.Bitmap.createBitmap(size.first, size.second, android.graphics.Bitmap.Config.ARGB_8888)

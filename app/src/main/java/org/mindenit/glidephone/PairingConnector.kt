@@ -676,6 +676,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     @Volatile private var lastClipboardSensitive = false
 
+    @androidx.annotation.VisibleForTesting
+    internal val clipboardSnapshot: String? get() = lastClipboardSeen
+
+    /** Read the clipboard now (call while focused, e.g. from ClipboardFloatingActivity). */
+    fun pushClipboardNow() = onLocalClipboardChanged()
+
     private fun onLocalClipboardChanged() {
         val clip = runCatching { (app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.primaryClip }.getOrNull()
         val text = runCatching { clip?.getItemAt(0)?.text?.toString() }.getOrNull()

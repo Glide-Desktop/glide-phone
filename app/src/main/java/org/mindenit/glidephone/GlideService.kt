@@ -72,14 +72,37 @@ class GlideService : Service() {
                 context, 0, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            return NotificationCompat.Builder(context, CHANNEL_ID)
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
                 .setContentTitle("Glide Phone")
                 .setContentText(text)
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setShowWhen(false)
-                .build()
+            if (devices.isNotEmpty()) {
+                // Android 10+ can't read the clipboard in the background: offer a manual send.
+                if (!ClipboardFloatingActivity.canSyncAutomatically()) {
+                    builder.addAction(0, "Надіслати буфер обміну", PendingIntent.getActivity(
+                        context, 1, ClipboardFloatingActivity.intent(context, showToast = true),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                }
+                if (devices.size == 1) {
+                    val device = devices.single()
+                    builder.addAction(0, "Надіслати файли", PendingIntent.getActivity(
+                        context, 2, Intent(context, SendFileActivity::class.java)
+                            .putExtra(SendFileActivity.EXTRA_DEVICE_ID, device.id)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                    if (GlideHub.remoteCommands[device.id].orEmpty().isNotEmpty()) {
+                        builder.addAction(0, "Команди", PendingIntent.getActivity(
+                            context, 3, Intent(context, MainActivity::class.java)
+                                .putExtra(MainActivity.EXTRA_DETAIL, "COMMANDS")
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                    }
+                }
+            }
+            return builder.build()
         }
     }
 }

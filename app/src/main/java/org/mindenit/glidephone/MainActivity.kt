@@ -98,6 +98,17 @@ import org.mindenit.glidephone.ui.theme.LocalGlideColors
 // ---------------------------------------------------------------------------
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** Open a detail screen directly, e.g. "COMMANDS" from the persistent notification. */
+        const val EXTRA_DETAIL = "detail"
+        internal var pendingDetail by androidx.compose.runtime.mutableStateOf<String?>(null)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(EXTRA_DETAIL)?.let { pendingDetail = it }
+    }
+
     override fun onStart() {
         super.onStart()
         GlideHub.inForeground = true
@@ -115,6 +126,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
         )
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        intent?.getStringExtra(EXTRA_DETAIL)?.let { pendingDetail = it }
         setContent {
             GlidePhoneTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -236,6 +248,14 @@ private fun GlideApp() {
                 if (started) "Надсилання файлу розпочато" else "Спочатку підключіть пристрій",
                 android.widget.Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    LaunchedEffect(MainActivity.pendingDetail, completed) {
+        val requested = MainActivity.pendingDetail ?: return@LaunchedEffect
+        if (completed) {
+            runCatching { Detail.valueOf(requested) }.getOrNull()?.let { detail = it }
+            MainActivity.pendingDetail = null
         }
     }
 

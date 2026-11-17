@@ -3,6 +3,16 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Version from the release tag (CI passes -PglideVersion=1.2.3), else the development default.
+val glideVersion: String = (findProperty("glideVersion") as String?)?.removePrefix("v") ?: "1.0"
+val glideVersionCode: Int = glideVersion.split('.', '-').take(3).mapIndexed { i, part ->
+    (part.toIntOrNull() ?: 0) * when (i) { 0 -> 10000; 1 -> 100; else -> 1 }
+}.sum().coerceAtLeast(1)
+
+// Release signing: a real key from the environment (CI secrets or a local shell), otherwise
+// the public CI test key in ci/, so builds stay installable and update each other.
+val releaseKeystore: String? = System.getenv("GLIDE_KEYSTORE_FILE")?.takeIf { file(it).exists() }
+
 android {
     namespace = "org.mindenit.glidephone"
     compileSdk {
@@ -13,14 +23,31 @@ android {
         applicationId = "org.mindenit.glidephone"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = glideVersionCode
+        versionName = glideVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore != null) {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("GLIDE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("GLIDE_KEY_ALIAS")
+                keyPassword = System.getenv("GLIDE_KEY_PASSWORD") ?: System.getenv("GLIDE_KEYSTORE_PASSWORD")
+            } else {
+                storeFile = rootProject.file("ci/glide-ci-test.keystore")
+                storePassword = "glide-ci-test"
+                keyAlias = "glide-ci-test"
+                keyPassword = "glide-ci-test"
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

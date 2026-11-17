@@ -89,12 +89,11 @@ class ShareActivity : ComponentActivity() {
     }
 
     private fun deliver(connector: PairingConnector, deviceId: String, content: Content) {
-        connector.setTarget(deviceId)
         val ok = when (content) {
             is Content.Files -> connector.sendFiles(content.uris, deviceId)
-            is Content.Url -> connector.sendShareUrl(content.url)
-            is Content.Text -> connector.sendShareText(content.text)
-            is Content.Keystrokes -> connector.sendType(content.text)
+            is Content.Url -> connector.sendShareUrl(content.url, deviceId)
+            is Content.Text -> connector.sendShareText(content.text, deviceId)
+            is Content.Keystrokes -> connector.sendType(content.text, deviceId)
         }
         Toast.makeText(this, if (ok) "Надсилання розпочато" else "Пристрій не підтримує цю дію", Toast.LENGTH_SHORT).show()
         finish()

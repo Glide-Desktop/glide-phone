@@ -562,8 +562,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun setPluginEnabled(deviceId: String, plugin: DevicePlugin, enabled: Boolean) {
         plugins.setEnabled(deviceId, plugin, enabled)
-        // Re-run the plugin's onCreate requests (e.g. ask for notifications) right away.
-        if (enabled) connections[deviceId]?.let(::greetPeer)
+        // Run only this plugin's onCreate (e.g. ask for notifications) right away.
+        if (enabled) connections[deviceId]?.let { pluginCreated(it, plugin) }
     }
 
     /** Abort any pairing attempt in progress (links stay open). */
@@ -622,6 +622,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 mediaStates.keys.removeAll { it.startsWith("$id/") }
                 volumeSinks.remove(id)
                 iconsSent.remove(id)
+                payloadQueues.remove(id)?.shutdownNow()
                 artSupport.remove(id)
                 stopSftp(id)
                 if (target == id) target = connections.keys.firstOrNull()
@@ -634,34 +635,41 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     /** Initial state exchange right after a trusted connection comes up. */
     private fun greetPeer(connection: TrustedConnection) {
         runCatching { MediaControl.start(app) { packet -> broadcastPacket(packet) } }
+        DevicePlugin.entries.forEach { plugin -> pluginCreated(connection, plugin) }
+    }
+
+    /** What each plugin sends from its onCreate, for one device. */
+    private fun pluginCreated(connection: TrustedConnection, plugin: DevicePlugin) {
         val id = connection.pending.peer.id
-        // Each plugin's onCreate: only plugins enabled for this device speak up.
+        if (!plugins.isEnabled(id, plugin)) return
         fun send(packet: String) {
             val type = runCatching { JSONObject(packet).optString("type") }.getOrNull() ?: return
-            if (plugins.allowsSending(id, type)) connection.send(packet)
+            if (type in connection.pending.peer.incomingCapabilities && plugins.allowsSending(id, type)) connection.send(packet)
         }
         enqueue {
-            val features = SetupPreferences(app).selectedFeatures()
-            send(ProtocolPackets.runCommandRequestList())
-            send(ProtocolPackets.mprisRequest(JSONObject().put("requestPlayerList", true)))
-            send(ProtocolPackets.systemVolumeRequest(JSONObject().put("requestSinks", true)))
-            // receivenotifications asks for the computer's current notifications.
-            send(JSONObject().put("id", System.currentTimeMillis())
-                .put("type", ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
-                .put("body", JSONObject().put("request", true)).toString() + "\n")
-            runCatching { ConnectivityReporter.reportPacket(app)?.let(::send) }
-            // SftpPlugin.onCreate: no server until the computer asks to browse.
-            send(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
-            // RemoteKeyboardPlugin.onCreate announces the keyboard when it can type.
-            if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
-            runCatching { send(MediaControl.playerListPacket(app)) }
-            runCatching { MediaControl.statePacket(app)?.let(::send) }
-            if (FeatureId.CLIPBOARD.key in features) {
-                val content = lastClipboardSeen
-                if (!content.isNullOrEmpty() && lastClipboardTime > 0 &&
-                    !(lastClipboardSensitive && SetupPreferences(app).skipSensitiveClipboard)) {
-                    send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
+            when (plugin) {
+                DevicePlugin.RUN_COMMAND -> send(ProtocolPackets.runCommandRequestList())
+                DevicePlugin.MPRIS -> send(ProtocolPackets.mprisRequest(JSONObject().put("requestPlayerList", true)))
+                DevicePlugin.SYSTEM_VOLUME -> send(ProtocolPackets.systemVolumeRequest(JSONObject().put("requestSinks", true)))
+                DevicePlugin.RECEIVE_NOTIFICATIONS -> send(JSONObject().put("id", System.currentTimeMillis())
+                    .put("type", ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
+                    .put("body", JSONObject().put("request", true)).toString() + "\n")
+                DevicePlugin.CONNECTIVITY -> runCatching { ConnectivityReporter.reportPacket(app)?.let(::send) }
+                DevicePlugin.MPRIS_RECEIVER -> runCatching {
+                    send(MediaControl.playerListPacket(app))
+                    MediaControl.statePacket(app)?.let(::send)
                 }
+                DevicePlugin.SFTP -> send(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
+                DevicePlugin.REMOTE_KEYBOARD -> if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
+                DevicePlugin.NOTIFICATIONS -> NotificationBridge.refresh()
+                DevicePlugin.CLIPBOARD -> if (FeatureId.CLIPBOARD.key in SetupPreferences(app).selectedFeatures()) {
+                    val content = lastClipboardSeen
+                    if (!content.isNullOrEmpty() && lastClipboardTime > 0 &&
+                        !(lastClipboardSensitive && SetupPreferences(app).skipSensitiveClipboard)) {
+                        send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
+                    }
+                }
+                else -> Unit
             }
         }
     }
@@ -1102,17 +1110,20 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendSuperKey(): Boolean = sendPacket(ProtocolPackets.superKey())
 
     /** Types text on the computer one character at a time, as the desktop expects. */
-    fun sendType(text: String): Boolean {
-        if (text.isEmpty() || !supportsMouse) return false
+    fun sendType(text: String, deviceId: String? = null): Boolean {
+        if (text.isEmpty()) return false
+        val connection = (if (deviceId != null) connections[deviceId] else targetConnection()) ?: return false
+        if (ProtocolPackets.TYPE_MOUSEPAD_REQUEST !in connection.pending.peer.incomingCapabilities) return false
+        val id = connection.pending.peer.id
         var index = 0
         var ok = true
         while (index < text.length) {
             val codePoint = text.codePointAt(index)
             index += Character.charCount(codePoint)
             ok = when (codePoint) {
-                '\n'.code -> sendSpecialKey(ProtocolPackets.KEY_ENTER)
-                '\t'.code -> sendSpecialKey(ProtocolPackets.KEY_TAB)
-                else -> sendPacket(ProtocolPackets.mouseType(String(Character.toChars(codePoint))))
+                '\n'.code -> sendPacketTo(id, ProtocolPackets.presenterSpecialKey(ProtocolPackets.KEY_ENTER))
+                '\t'.code -> sendPacketTo(id, ProtocolPackets.presenterSpecialKey(ProtocolPackets.KEY_TAB))
+                else -> sendPacketTo(id, ProtocolPackets.mouseType(String(Character.toChars(codePoint))))
             } && ok
         }
         return ok
@@ -1175,8 +1186,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         return sendPacket(ProtocolPackets.clipboard(content))
     }
 
-    fun sendShareText(text: String): Boolean = sendPacket(ProtocolPackets.shareText(text))
-    fun sendShareUrl(url: String): Boolean = sendPacket(ProtocolPackets.shareUrl(url))
+    fun sendShareText(text: String, deviceId: String? = null): Boolean = sendPacketTo(deviceId, ProtocolPackets.shareText(text))
+    fun sendShareUrl(url: String, deviceId: String? = null): Boolean = sendPacketTo(deviceId, ProtocolPackets.shareUrl(url))
 
     /**
      * Send [json] to one device with [bytes] attached as its payload (top-level payloadSize
@@ -1184,20 +1195,36 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
      */
     private fun sendWithPayload(deviceId: String, json: JSONObject, bytes: ByteArray, acceptTimeoutMs: Int, onSent: () -> Unit = {}): Boolean {
         val connection = connections[deviceId] ?: return false
+        // One small payload at a time per device, so a burst (e.g. resending every
+        // notification icon after a reconnect) cannot use up the 1739-1764 port range.
+        val queue = payloadQueues.getOrPut(deviceId) { Executors.newSingleThreadExecutor() }
         return try {
-            io.execute {
-                val attached = runCatching {
-                    val handle = SharePayload.serve(LocalIdentity().loadOrCreate(), connection.pending.certificate,
+            queue.execute {
+                if (connections[deviceId] !== connection) return@execute
+                val handle = runCatching {
+                    SharePayload.serve(LocalIdentity().loadOrCreate(), connection.pending.certificate,
                         java.io.ByteArrayInputStream(bytes), bytes.size.toLong(), acceptTimeoutMs = acceptTimeoutMs)
+                }.getOrNull()
+                if (handle != null) {
                     json.put("payloadSize", bytes.size.toLong()).put("payloadTransferInfo", JSONObject().put("port", handle.port))
-                }.isSuccess
-                if (sendPacketTo(deviceId, json.toString() + "\n") && attached) onSent()
+                }
+                val sent = sendPacketTo(deviceId, json.toString() + "\n")
+                if (handle != null) {
+                    if (sent) {
+                        onSent()
+                        handle.await(acceptTimeoutMs + 5_000L)
+                    } else {
+                        handle.cancel()
+                    }
+                }
             }
             true
         } catch (_: RejectedExecutionException) {
             false
         }
     }
+
+    private val payloadQueues = ConcurrentHashMap<String, java.util.concurrent.ExecutorService>()
 
     /** Per device: notification key -> hash of the icon that device already has. */
     private val iconsSent = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
@@ -1325,6 +1352,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         NotificationBridge.detach(this)
         sender.shutdownNow()
         downloads.shutdownNow()
+        payloadQueues.values.forEach { it.shutdownNow() }
         io.shutdownNow()
     }
 

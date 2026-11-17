@@ -29,6 +29,7 @@ internal object RemoteMediaNotification {
     const val EXTRA_ACTION = "action"
 
     private var session: MediaSession? = null
+    @Volatile var spotifyRunning = false
     /** "device/player" currently in the notification, kept while it still exists. */
     private var showing: String? = null
     /** The user swiped a paused player away; don't bring it back until it plays again. */
@@ -42,7 +43,8 @@ internal object RemoteMediaNotification {
         }
         val states = GlideHub.mediaStates
         val connected = GlideHub.connectedDevices.map { it.id }.toSet()
-        fun usable(key: String) = key.substringBefore('/') in connected && states.containsKey(key)
+        fun usable(key: String) = key.substringBefore('/') in connected && states.containsKey(key) &&
+            !(spotifyRunning && key.substringAfter('/').equals("spotify", ignoreCase = true))
         val playing = states.filter { usable(it.key) && it.value.isPlaying }.keys
         if (dismissed != null && dismissed in playing) dismissed = null
         // Prefer the shown player while it plays, then any playing one, then keep the shown one.

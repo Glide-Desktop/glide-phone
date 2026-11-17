@@ -64,6 +64,14 @@ class GlideNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         NotificationBridge.connected(this)
+        runCatching { setSpotify(activeNotifications.orEmpty().any { it.packageName == SPOTIFY }) }
+    }
+
+    /** MprisMediaSession hides the computer's Spotify while Spotify itself runs here. */
+    private fun setSpotify(running: Boolean) {
+        if (RemoteMediaNotification.spotifyRunning == running) return
+        RemoteMediaNotification.spotifyRunning = running
+        handler.post { RemoteMediaNotification.update(this) }
     }
 
     override fun onListenerDisconnected() {
@@ -78,7 +86,12 @@ class GlideNotificationListener : NotificationListenerService() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    private companion object {
+        const val SPOTIFY = "com.spotify.music"
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (sbn.packageName == SPOTIFY) setSpotify(true)
         active[sbn.key] = sbn
         // Coalesce rapid updates of the same notification (NOTIFICATION_SYNC_DELAY_MS).
         handler.removeCallbacksAndMessages(sbn.key)
@@ -86,6 +99,7 @@ class GlideNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (sbn.packageName == SPOTIFY) setSpotify(false)
         active.remove(sbn.key)
         handler.removeCallbacksAndMessages(sbn.key)
         if (announced.remove(sbn.key)) {

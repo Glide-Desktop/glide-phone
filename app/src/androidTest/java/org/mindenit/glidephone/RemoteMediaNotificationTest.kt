@@ -57,4 +57,18 @@ class RemoteMediaNotificationTest {
         Thread.sleep(300)
         assertNull(shown())
     }
+
+    @Test
+    fun hidesTheComputersSpotifyWhileSpotifyRunsOnThePhone() {
+        RemoteMediaNotification.spotifyRunning = true
+        try {
+            inject(PairingConnector.Event.Connected(device, "Ноутбук"))
+            inject(PairingConnector.Event.MediaPlayers(device, listOf("Spotify")))
+            inject(PairingConnector.Event.MediaUpdate(device, PairingConnector.MediaState("Spotify", title = "Пісня", isPlaying = true)))
+            Thread.sleep(300)
+            assertNull(shown())
+        } finally {
+            RemoteMediaNotification.spotifyRunning = false
+        }
+    }
 }

@@ -367,7 +367,11 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val seen = NearbyDiscovery.Candidate(peer.id, peer.name, address.hostAddress.orEmpty(), peer.tcpPort ?: 1716, peer.version, peer.isGlide)
                 udpListeners.forEach { listener -> runCatching { listener(seen) } }
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
-                if (!peer.isGlide) continue // this app talks to Glide Phone desktops only
+                if (!peer.isGlide) {
+                    // This app talks to Glide Phone desktops only; tell the user why it isn't listed.
+                    if (refusedPeers.put(peer.id, peer.name) == null) emit(Event.PeersChanged)
+                    continue
+                }
                 // On an untrusted network only already paired devices may connect.
                 if (!networkSettings.isTrustedNetwork && runCatching {
                         TrustedPeerStore(app).certificate(peer.id, LocalIdentity().loadOrCreate().id)
@@ -405,6 +409,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     }
 
     private val udpListeners = java.util.concurrent.CopyOnWriteArraySet<(NearbyDiscovery.Candidate) -> Unit>()
+
+    /** KDE Connect (non-Glide) computers seen on the network, by id -> name. */
+    private val refusedPeers = ConcurrentHashMap<String, String>()
+    val refusedPeerNames: Collection<String> get() = refusedPeers.values
 
     /** True once the server runs; it then owns UDP 1716 and reports peers to listeners. */
     val isAdvertising: Boolean get() = advertising.get()

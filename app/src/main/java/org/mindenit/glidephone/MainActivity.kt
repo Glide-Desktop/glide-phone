@@ -773,6 +773,14 @@ private fun DeviceDiscoverySection(
         Spacer(Modifier.height(6.dp))
     }
 
+    // Plain KDE Connect computers are seen but not offered: say so instead of staying silent.
+    val refused = remember(pairingEvent, namesVersion) { connector.refusedPeerNames.toList() }
+    if (refused.isNotEmpty()) {
+        InfoCard(Icons.Outlined.Info, "Знайдено KDE Connect: ${refused.joinToString()}",
+            "Glide Phone з’єднується лише з glide-phone на комп’ютері. Для KDE Connect скористайтеся застосунком KDE Connect.")
+        Spacer(Modifier.height(10.dp))
+    }
+
     // Paired but not reachable now (KDE Connect lists these too, and can forget them).
     var forgotten by remember { mutableIntStateOf(0) }
     val offlinePaired = remember(connected, pairingEvent, forgotten) {

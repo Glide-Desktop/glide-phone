@@ -84,7 +84,7 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
     fun recordWake(peerId: String, macs: List<String>, address: String?) = synchronized(lock) {
         val records = read()
         val record = records.optJSONObject(peerId) ?: return@synchronized
-        record.put("macs", org.json.JSONArray(macs))
+        record.put("macs", org.json.JSONArray(macs.filter(WakeOnLan::isMac).take(8)))
         address?.let { record.put("lastAddress", it) }
         write(records)
     }
@@ -121,9 +121,12 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
     }
 
     private fun write(records: JSONObject) {
+        // Never write a store that read() would refuse: that would lock out every pairing.
+        val bytes = records.toString().toByteArray(Charsets.UTF_8)
+        check(bytes.size <= MAX_STORE_BYTES) { "Peer store would be too large" }
         val output = file.startWrite()
         try {
-            output.write(records.toString().toByteArray(Charsets.UTF_8))
+            output.write(bytes)
             file.finishWrite(output)
         } catch (error: Exception) {
             file.failWrite(output)

@@ -11,6 +11,8 @@ import java.net.InetAddress
 internal object WakeOnLan {
     private val MAC = Regex("^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
 
+    fun isMac(text: String): Boolean = MAC.matches(text)
+
     /** 6 x 0xFF followed by the MAC 16 times. */
     fun magicPacket(mac: String): ByteArray? {
         if (!MAC.matches(mac)) return null

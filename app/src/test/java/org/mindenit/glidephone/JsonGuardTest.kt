@@ -23,3 +23,13 @@ class JsonGuardTest {
         assertEquals(true, JsonGuard.shallow("[".repeat(64)))
     }
 }
+
+class IdentitySanitizingTest {
+    @Test
+    fun anOddDeviceTypeBecomesDesktop() {
+        val line = """{"id":1,"type":"kdeconnect.identity","body":{"deviceId":"abcdefghijklmnopqrstuvwxyz012345","deviceName":"PC","protocolVersion":8,"deviceType":"${"x".repeat(5000)}"}}"""
+        assertEquals("desktop", IdentityPacket.decode(line)?.type)
+        assertTrue(WakeOnLan.isMac("a8:5e:45:01:02:03"))
+        assertFalse(WakeOnLan.isMac("a8:5e:45:01:02:03" + "0".repeat(100)))
+    }
+}

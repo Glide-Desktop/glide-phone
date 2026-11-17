@@ -47,6 +47,8 @@ internal object IdentityPacket {
             .put("body", body).toString() + "\n"
     }
 
+    private val DEVICE_TYPES = setOf("desktop", "laptop", "phone", "tablet", "tv")
+
     fun decode(line: String): Peer? {
         if (line.toByteArray(Charsets.UTF_8).size > MAX_BYTES || !JsonGuard.shallow(line)) return null
         return try {
@@ -71,7 +73,9 @@ internal object IdentityPacket {
                 body.optInt("tcpPort", -1).takeIf { it in 1716..1764 } ?: return null
             } else null
             val glide = body.optInt("glideProtocol", -1).takeIf { it >= 1 }
-            Peer(id, name, version, body.optString("deviceType", "desktop"), incoming, tcpPort, glide)
+            // Only the types KDE Connect defines (it is stored and shown).
+            val type = body.optString("deviceType", "desktop").takeIf { it in DEVICE_TYPES } ?: "desktop"
+            Peer(id, name, version, type, incoming, tcpPort, glide)
         } catch (_: Exception) {
             null
         }

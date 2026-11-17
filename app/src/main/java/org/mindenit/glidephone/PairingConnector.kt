@@ -901,7 +901,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
             ProtocolPackets.TYPE_GLIDE_WOL -> {
                 val list = body.optJSONArray("macs")
-                val macs = (0 until (list?.length() ?: 0)).mapNotNull { list?.optString(it)?.takeIf(String::isNotBlank) }.take(8)
+                val macs = (0 until (list?.length() ?: 0)).mapNotNull { list?.optString(it)?.takeIf(WakeOnLan::isMac) }.distinct().take(8)
                 val address = connections[peerId]?.pending?.socket?.inetAddress?.hostAddress
                 runCatching { TrustedPeerStore(app).recordWake(peerId, macs, address) }
             }

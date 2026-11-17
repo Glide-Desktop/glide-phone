@@ -948,7 +948,7 @@ private fun DetailScreen(
                 }
                 Detail.PRESENTER -> PresenterDetail(connector, selectedFeatures, onFeatureChange)
                 Detail.REMOTE -> RemoteControlDetail(connector)
-                Detail.COMMANDS -> RunCommandDetail(connector, remoteCommands)
+                Detail.COMMANDS -> RunCommandDetail(connector, remoteCommands, deviceId)
                 Detail.MEDIA -> MediaDetail(connector, deviceId)
                 Detail.VOLUME -> VolumeDetail(connector, deviceId)
                 Detail.DIGITIZER -> DigitizerDetail(connector)
@@ -1048,8 +1048,11 @@ private fun ColumnScope.PresenterDetail(
 }
 
 @Composable
-private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands: List<PairingConnector.RemoteCommand>) {
+private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands: List<PairingConnector.RemoteCommand>, deviceId: String?) {
     LaunchedEffect(connector?.online) { if (connector?.online == true) connector.requestCommands() }
+    val output = deviceId?.let { GlideHub.commandOutput[it] }.orEmpty()
+    val running = output.any { it.status == PairingConnector.CommandStatus.RUNNING }
+    val canAdd = deviceId != null && deviceId in GlideHub.canAddCommand
     Body("Запускайте команди, налаштовані на комп’ютері.")
     Spacer(Modifier.height(16.dp))
     NotConnectedNotice(connector)
@@ -1070,6 +1073,43 @@ private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands:
                     cmd.command.ifBlank { "Виконати на комп’ютері" },
                     trailing = Icons.Outlined.Terminal
                 ) { connector?.sendRunCommandRequest(cmd.key) }
+            }
+        }
+    }
+    if (canAdd) {
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = { connector?.sendRunCommandSetup() }) { Text("Додати команду на комп’ютері") }
+    }
+    if (output.isNotEmpty()) {
+        Spacer(Modifier.height(20.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("Вивід")
+            Spacer(Modifier.weight(1f))
+            if (running) TextButton(onClick = { connector?.sendRunCommandStop() }) { Text("Зупинити") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(
+            Modifier.fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+                .padding(14.dp)
+        ) {
+            output.takeLast(200).forEach { line ->
+                val color = when (line.status) {
+                    PairingConnector.CommandStatus.STDERR, PairingConnector.CommandStatus.FAILED -> MaterialTheme.colorScheme.error
+                    PairingConnector.CommandStatus.SUCCESSFUL -> LocalGlideColors.current.connectedDot
+                    PairingConnector.CommandStatus.RUNNING -> MaterialTheme.colorScheme.primary
+                    PairingConnector.CommandStatus.STDOUT -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                val suffix = when (line.status) {
+                    PairingConnector.CommandStatus.RUNNING -> "  …"
+                    PairingConnector.CommandStatus.SUCCESSFUL -> "  ✓"
+                    PairingConnector.CommandStatus.FAILED -> "  ✗"
+                    else -> ""
+                }
+                Text(
+                    line.text + suffix, color = color,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                )
             }
         }
     }

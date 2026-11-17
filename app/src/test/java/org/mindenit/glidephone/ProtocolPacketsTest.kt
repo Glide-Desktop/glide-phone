@@ -238,4 +238,12 @@ class ProtocolPacketsTest {
         assertEquals(4, update.getJSONObject("body").getInt("numberOfFiles"))
         assertTrue(ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE in IdentityPacket.INCOMING)
     }
+
+    @Test
+    fun runCommandSetupStopAndOutputCapability() {
+        assertTrue(JSONObject(ProtocolPackets.runCommandSetup()).getJSONObject("body").getBoolean("setup"))
+        assertTrue(JSONObject(ProtocolPackets.runCommandStop()).getJSONObject("body").getBoolean("stop"))
+        assertEquals(ProtocolPackets.TYPE_RUNCOMMAND_REQUEST, JSONObject(ProtocolPackets.runCommandStop()).getString("type"))
+        assertTrue(ProtocolPackets.TYPE_RUNCOMMAND_OUTPUT in IdentityPacket.INCOMING)
+    }
 }

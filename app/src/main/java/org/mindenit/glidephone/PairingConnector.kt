@@ -47,7 +47,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         data class PingReceived(val name: String, val message: String) : Event
         data class ShareReceived(val id: String, val text: String?, val url: String?) : Event
         data class FileReceived(val id: String, val fileName: String, val success: Boolean) : Event
-        data class CommandList(val id: String, val commands: List<RemoteCommand>) : Event
+        data class CommandList(val id: String, val commands: List<RemoteCommand>, val canAddCommand: Boolean) : Event
+        data class CommandOutput(val id: String, val line: CommandLine) : Event
         data class RemoteNotification(val id: String, val notificationId: String, val appName: String, val title: String, val text: String, val cancel: Boolean) : Event
         data class MediaPlayers(val id: String, val players: List<String>) : Event
         data class MediaUpdate(val id: String, val state: MediaState) : Event
@@ -55,6 +56,11 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     }
 
     data class RemoteCommand(val key: String, val name: String, val command: String)
+
+    enum class CommandStatus { RUNNING, SUCCESSFUL, FAILED, STDOUT, STDERR }
+
+    /** One line of a remote command's console, as shown by KDE Connect's RunCommand screen. */
+    data class CommandLine(val commandId: Int, val status: CommandStatus, val text: String)
 
     data class MediaState(
         val player: String,
@@ -574,9 +580,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 batch.total = maxOf(batch.total, body.optInt("numberOfFiles", batch.total))
             }
             ProtocolPackets.TYPE_PING -> emit(Event.PingReceived(peerName, body.optString("message", "Ping!")))
-            ProtocolPackets.TYPE_RUNCOMMAND -> {
-                if (body.has("commandList")) emit(Event.CommandList(peerId, parseCommandList(body)))
-            }
+            ProtocolPackets.TYPE_RUNCOMMAND, ProtocolPackets.TYPE_RUNCOMMAND_OUTPUT -> handleRunCommand(peerId, body)
             ProtocolPackets.TYPE_NOTIFICATION -> {
                 val nid = body.optString("id")
                 if (nid.isNotEmpty()) {
@@ -756,6 +760,31 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         emit(Event.VolumeSinks(peerId, updated))
     }
 
+    private fun handleRunCommand(peerId: String, body: JSONObject) {
+        when {
+            body.has("commandList") ->
+                emit(Event.CommandList(peerId, parseCommandList(body), body.optBoolean("canAddCommand", false)))
+            body.has("commandStarted") -> emit(Event.CommandOutput(
+                peerId, CommandLine(body.optInt("id"), CommandStatus.RUNNING, "$ " + body.optString("command"))
+            ))
+            body.has("commandOutput") -> {
+                val id = body.optInt("id")
+                body.optJSONArray("stdout")?.let { lines ->
+                    for (i in 0 until lines.length()) emit(Event.CommandOutput(peerId, CommandLine(id, CommandStatus.STDOUT, lines.optString(i))))
+                }
+                body.optJSONArray("stderr")?.let { lines ->
+                    for (i in 0 until lines.length()) emit(Event.CommandOutput(peerId, CommandLine(id, CommandStatus.STDERR, lines.optString(i))))
+                }
+            }
+            body.has("commandFinished") -> emit(Event.CommandOutput(
+                peerId, CommandLine(
+                    body.optInt("id"),
+                    if (body.optBoolean("success", true)) CommandStatus.SUCCESSFUL else CommandStatus.FAILED, ""
+                )
+            ))
+        }
+    }
+
     private fun parseCommandList(body: JSONObject): List<RemoteCommand> {
         val obj = when (val raw = body.opt("commandList")) {
             is JSONObject -> raw
@@ -859,6 +888,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun sendRunCommandRequest(key: String): Boolean = sendPacket(ProtocolPackets.runCommandRequest(key))
     fun requestCommands(): Boolean = sendPacket(ProtocolPackets.runCommandRequestList())
+    /** Ask the computer to open its command configuration (KDE Connect "add command"). */
+    fun sendRunCommandSetup(): Boolean = sendPacket(ProtocolPackets.runCommandSetup())
+    fun sendRunCommandStop(): Boolean = sendPacket(ProtocolPackets.runCommandStop())
 
     fun sendDigitizerStart(width: Int, height: Int, resolutionX: Int, resolutionY: Int): Boolean =
         sendPacket(ProtocolPackets.digitizerStart(width, height, resolutionX, resolutionY))

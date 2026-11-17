@@ -26,6 +26,7 @@ internal object ProtocolPackets {
     const val TYPE_SYSTEMVOLUME_REQUEST = "kdeconnect.systemvolume.request"
     const val TYPE_RUNCOMMAND = "kdeconnect.runcommand"
     const val TYPE_RUNCOMMAND_REQUEST = "kdeconnect.runcommand.request"
+    const val TYPE_RUNCOMMAND_OUTPUT = "kdeconnect.runcommand.output"
     const val TYPE_CONNECTIVITY_REPORT = "kdeconnect.connectivity_report"
     const val TYPE_TELEPHONY = "kdeconnect.telephony"
     const val TYPE_TELEPHONY_REQUEST_MUTE = "kdeconnect.telephony.request_mute"
@@ -175,6 +176,18 @@ internal object ProtocolPackets {
         .put("id", System.currentTimeMillis())
         .put("type", TYPE_RUNCOMMAND_REQUEST)
         .put("body", JSONObject().put("key", key))
+        .toString() + "\n"
+
+    fun runCommandSetup(): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_RUNCOMMAND_REQUEST)
+        .put("body", JSONObject().put("setup", true))
+        .toString() + "\n"
+
+    fun runCommandStop(): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_RUNCOMMAND_REQUEST)
+        .put("body", JSONObject().put("stop", true))
         .toString() + "\n"
 
     fun runCommandRequestList(): String = JSONObject()

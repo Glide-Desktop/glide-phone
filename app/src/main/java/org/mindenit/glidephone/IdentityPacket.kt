@@ -74,6 +74,7 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_SHARE_REQUEST,
         ProtocolPackets.TYPE_SHARE_REQUEST_UPDATE,
         ProtocolPackets.TYPE_RUNCOMMAND,
+        ProtocolPackets.TYPE_RUNCOMMAND_OUTPUT,
         ProtocolPackets.TYPE_NOTIFICATION,
         ProtocolPackets.TYPE_NOTIFICATION_REQUEST,
         ProtocolPackets.TYPE_NOTIFICATION_REPLY,

@@ -31,6 +31,10 @@ internal object GlideHub {
         private set
     var remoteCommands by mutableStateOf<Map<String, List<PairingConnector.RemoteCommand>>>(emptyMap())
         private set
+    var canAddCommand by mutableStateOf<Set<String>>(emptySet())
+        private set
+    var commandOutput by mutableStateOf<Map<String, List<PairingConnector.CommandLine>>>(emptyMap())
+        private set
     var mediaPlayers by mutableStateOf<Map<String, List<String>>>(emptyMap())
         private set
     var mediaStates by mutableStateOf<Map<String, PairingConnector.MediaState>>(emptyMap())
@@ -58,6 +62,8 @@ internal object GlideHub {
     }
 
     fun mediaKey(deviceId: String, player: String) = "$deviceId/$player"
+
+    private const val MAX_CONSOLE_LINES = 500
 
     private fun onEvent(context: Context, event: PairingConnector.Event) {
         when (event) {
@@ -88,6 +94,9 @@ internal object GlideHub {
                 connectedDevices = connectedDevices.filterNot { it.id == event.id }
                 peerBatteries = peerBatteries - event.id
                 remoteCommands = remoteCommands - event.id
+                canAddCommand = canAddCommand - event.id
+                // Running commands will never report completion on this link.
+                commandOutput = commandOutput - event.id
                 mediaPlayers = mediaPlayers - event.id
                 mediaStates = mediaStates.filterKeys { !it.startsWith("${event.id}/") }
                 volumeSinks = volumeSinks - event.id
@@ -116,7 +125,22 @@ internal object GlideHub {
                 peerBatteries = peerBatteries + (event.id to Pair(event.charge, event.charging))
             is PairingConnector.Event.PingReceived ->
                 Toast.makeText(context, "Пінг від «${event.name}»: ${event.message}", Toast.LENGTH_SHORT).show()
-            is PairingConnector.Event.CommandList -> remoteCommands = remoteCommands + (event.id to event.commands)
+            is PairingConnector.Event.CommandList -> {
+                remoteCommands = remoteCommands + (event.id to event.commands)
+                canAddCommand = if (event.canAddCommand) canAddCommand + event.id else canAddCommand - event.id
+            }
+            is PairingConnector.Event.CommandOutput -> {
+                val lines = commandOutput[event.id].orEmpty()
+                val line = event.line
+                commandOutput = commandOutput + (event.id to when (line.status) {
+                    // Completion updates the "$ command" line instead of adding a new one.
+                    PairingConnector.CommandStatus.SUCCESSFUL, PairingConnector.CommandStatus.FAILED -> {
+                        val index = lines.indexOfLast { it.commandId == line.commandId && it.status == PairingConnector.CommandStatus.RUNNING }
+                        if (index < 0) lines else lines.toMutableList().also { it[index] = it[index].copy(status = line.status) }
+                    }
+                    else -> (lines + line).takeLast(MAX_CONSOLE_LINES)
+                })
+            }
             is PairingConnector.Event.RemoteNotification -> {
                 if (event.cancel) RemoteNotifications.cancel(context, event.notificationId)
                 else RemoteNotifications.post(context, event.notificationId, event.appName, event.title, event.text)

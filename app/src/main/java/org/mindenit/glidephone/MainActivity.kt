@@ -1548,7 +1548,9 @@ private fun ColumnScope.FilesDetail(
             Text(shared, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (lastShare?.url != null) {
+                // Only web links open from here (no intent:, file:, content: from the computer).
+                val scheme = lastShare?.url?.let { runCatching { android.net.Uri.parse(it).scheme?.lowercase() }.getOrNull() }
+                if (lastShare?.url != null && (scheme == "http" || scheme == "https")) {
                     OutlinedButton(
                         onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(lastShare.url))) } },
                         shape = CircleShape

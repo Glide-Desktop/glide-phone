@@ -1031,7 +1031,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     if (batch.received + batch.failed >= batch.total) {
                         TransferNotifications.finished(app, batch.notification, false, name, batch.total, batch.failed,
                             if (batch.total == 1) batch.last else null)
-                        if (open && saved?.uri != null) openReceived(saved.uri)
+                        // CompositeReceiveFileJob: open right away only before Android 10; newer
+                        // versions get the "finished" notification with its open action, so
+                        // nothing (an APK, say) opens without the user tapping.
+                        if (open && saved?.uri != null && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                            openReceived(saved.uri)
+                        }
                     }
                 }
             } catch (_: RejectedExecutionException) {

@@ -346,6 +346,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 if (rateLimited(address)) continue
                 val peer = IdentityPacket.decode(String(packet.data, packet.offset, packet.length, Charsets.UTF_8)) ?: continue
                 if (peer.id == selfId || peer.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION) continue
+                // We own UDP 1716 (a unicast identity reaches only one socket): feed the device list.
+                val seen = NearbyDiscovery.Candidate(peer.id, peer.name, address.hostAddress.orEmpty(), peer.tcpPort ?: 1716, peer.version)
+                udpListeners.forEach { listener -> runCatching { listener(seen) } }
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
                 // On an untrusted network only already paired devices may connect.
                 if (!networkSettings.isTrustedNetwork && runCatching {
@@ -382,6 +385,14 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         if (lastByIp.size > 255) lastByIp.entries.removeIf { now - it.value > RATE_LIMIT_MS }
         return false
     }
+
+    private val udpListeners = java.util.concurrent.CopyOnWriteArraySet<(NearbyDiscovery.Candidate) -> Unit>()
+
+    /** True once the server runs; it then owns UDP 1716 and reports peers to listeners. */
+    val isAdvertising: Boolean get() = advertising.get()
+
+    fun addUdpPeerListener(listener: (NearbyDiscovery.Candidate) -> Unit) { udpListeners.add(listener) }
+    fun removeUdpPeerListener(listener: (NearbyDiscovery.Candidate) -> Unit) { udpListeners.remove(listener) }
 
     /** Owns a freshly secured link until it closes: pair if needed, then run it. */
     private fun adopt(handshake: IncomingHandshake.Pending, identity: LocalIdentity.Identity, trusted: TrustedPeerStore) {

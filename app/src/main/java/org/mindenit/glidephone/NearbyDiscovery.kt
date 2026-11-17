@@ -42,6 +42,11 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
 
     fun deviceName(id: String): String? = candidates[id]?.name
 
+    @Volatile private var feedConnector: PairingConnector? = null
+    private val udpFeed: (Candidate) -> Unit = { candidate ->
+        if (running.get() && candidates.put(candidate.id, candidate) != candidate) postUpdate(active = true, failed = false)
+    }
+
     fun start() {
         if (running.getAndSet(true)) return
         services.clear()
@@ -55,8 +60,14 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
             }
         } catch (_: Exception) {}
 
-        // Bind UDP socket on port 1716 for KDE Connect discovery
-        val socket = try {
+        // While the connector runs it owns UDP 1716 (unicast identities reach only one
+        // socket), so take its feed instead of binding a second socket.
+        val connector = GlideHub.connectorIfCreated()
+        if (connector != null && connector.isAdvertising) {
+            connector.addUdpPeerListener(udpFeed)
+            feedConnector = connector
+        }
+        val socket = if (feedConnector != null) null else try {
             DatagramSocket(null).apply {
                 reuseAddress = true
                 broadcast = true
@@ -123,7 +134,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
             }
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = post(this) {
                 nsdListener = null
-                if (udpSocket == null) {
+                if (udpSocket == null && feedConnector == null) {
                     stop()
                     postUpdate(active = false, failed = true)
                 }
@@ -221,6 +232,8 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
 
     fun stop() {
         if (!running.getAndSet(false)) return
+        feedConnector?.removeUdpPeerListener(udpFeed)
+        feedConnector = null
         runCatching { udpSocket?.close() }
         udpSocket = null
         receiverThread?.interrupt()

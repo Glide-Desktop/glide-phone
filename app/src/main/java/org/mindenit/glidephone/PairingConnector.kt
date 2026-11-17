@@ -116,9 +116,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val sender = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, ArrayBlockingQueue(128))
     /** Incoming payloads are fetched strictly one at a time, off the packet-sending thread. */
     // Bounded queues: a computer announcing endless payloads can't pile up work (each task
-    // holds its packet). Beyond the bound new work is dropped.
+    // holds its packet). Beyond the bound new work is refused.
     private val downloads = java.util.concurrent.ThreadPoolExecutor(1, 1, 0, java.util.concurrent.TimeUnit.MILLISECONDS,
-        java.util.concurrent.LinkedBlockingQueue(512), java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
+        java.util.concurrent.LinkedBlockingQueue(512)) // rejects beyond the bound: counted as a failed file
     /** Small incoming payloads (notification icons, album art) so a big file can't stall them. */
     private val smallDownloads = java.util.concurrent.ThreadPoolExecutor(2, 2, 0, java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.LinkedBlockingQueue(64), java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
@@ -395,16 +395,22 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 dialsInFlight.incrementAndGet()
                 try {
                     io.execute {
-                        runCatching {
-                            val identity = LocalIdentity().loadOrCreate()
-                            val trusted = TrustedPeerStore(app)
-                            // Only the dial counts; the session that follows runs as long as the link.
-                            val handshake = try {
-                                IncomingHandshake.connect(peer, address, identity, deviceName) { trusted.certificate(it, identity.id) }
-                            } finally {
-                                dialsInFlight.decrementAndGet()
+                        // Only the dial counts (released exactly once, whatever fails first); the
+                        // session that follows runs as long as the link.
+                        val released = AtomicBoolean(false)
+                        val release = { if (released.compareAndSet(false, true)) dialsInFlight.decrementAndGet() }
+                        try {
+                            runCatching {
+                                val identity = LocalIdentity().loadOrCreate()
+                                val trusted = TrustedPeerStore(app)
+                                val handshake = IncomingHandshake.connect(peer, address, identity, deviceName) {
+                                    trusted.certificate(it, identity.id)
+                                }
+                                release()
+                                adopt(handshake, identity, trusted)
                             }
-                            adopt(handshake, identity, trusted)
+                        } finally {
+                            release()
                         }
                     }
                 } catch (e: RejectedExecutionException) {
@@ -1040,6 +1046,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     }
                 }
             } catch (_: RejectedExecutionException) {
+                // Queue full (or shutting down): count it as failed so the batch still finishes.
+                batch.failed++
+                if (batch.received + batch.failed >= batch.total) {
+                    TransferNotifications.finished(app, batch.notification, false, connection.pending.peer.name,
+                        batch.total, batch.failed, null)
+                }
             }
             return
         }

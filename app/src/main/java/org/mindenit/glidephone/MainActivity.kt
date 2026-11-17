@@ -102,7 +102,12 @@ class MainActivity : ComponentActivity() {
         /** Open a detail screen directly, e.g. "COMMANDS" from the persistent notification. */
         const val EXTRA_DETAIL = "detail"
         internal var pendingDetail by androidx.compose.runtime.mutableStateOf<String?>(null)
+        /** Lets a screen take hardware keys (presenter volume keys). */
+        internal var keyInterceptor: ((android.view.KeyEvent) -> Boolean)? = null
     }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        keyInterceptor?.invoke(event) == true || super.dispatchKeyEvent(event)
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
@@ -1067,6 +1072,7 @@ private fun ColumnScope.PresenterDetail(
         OutlinedButton(onClick = { connector?.sendPresenterKey("+", ctrl = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Зум +") }
         OutlinedButton(onClick = { connector?.sendPresenterKey("-", ctrl = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Зум −") }
     }
+    PresenterVolumeKeys(connector)
     Spacer(Modifier.height(20.dp))
     GyroscopePointerControl(connector, feature.id in selectedFeatures)
     Spacer(Modifier.height(20.dp))

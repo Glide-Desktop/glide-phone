@@ -42,7 +42,8 @@ internal fun GyroscopePointerControl(connector: PairingConnector?, featureEnable
         if (!enabled || manager == null || gyroscope == null || activity == null || connector == null) {
             onDispose { }
         } else {
-            val motion = GyroscopeMotion()
+            // Relative to KDE's default factor (0.036 at sensitivity 50).
+            val motion = GyroscopeMotion(SetupPreferences(context).presenterPointerFactor / 0.036f)
             var registered = false
             val listener = object : SensorEventListener {
                 override fun onSensorChanged(event: SensorEvent) {

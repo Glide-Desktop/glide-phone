@@ -4,7 +4,7 @@ package org.mindenit.glidephone
  * Converts angular velocity (radians/second) into presenter pointer deltas.
  * The first sample establishes a timestamp; long pauses are not integrated.
  */
-internal class GyroscopeMotion {
+internal class GyroscopeMotion(private val scale: Float = 1f) {
     private var lastNanos: Long? = null
     private var accumulatedSeconds = 0f
     private var horizontal = 0f
@@ -34,8 +34,8 @@ internal class GyroscopeMotion {
         }
         val seconds = deltaNanos / 1_000_000_000f
         accumulatedSeconds += seconds
-        horizontal += -z * seconds * SENSITIVITY
-        vertical += -x * seconds * SENSITIVITY
+        horizontal += -z * seconds * SENSITIVITY * scale
+        vertical += -x * seconds * SENSITIVITY * scale
         if (accumulatedSeconds < 1f / 30f) return null
         val result = horizontal.coerceIn(-MAX_DELTA, MAX_DELTA) to vertical.coerceIn(-MAX_DELTA, MAX_DELTA)
         accumulatedSeconds = 0f

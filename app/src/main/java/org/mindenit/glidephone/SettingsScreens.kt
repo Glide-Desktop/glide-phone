@@ -357,3 +357,56 @@ internal fun MediaNotificationSettings() {
         RemoteMediaNotification.update(context)
     }
 }
+
+/**
+ * PresenterActivity volume keys: up = next slide, down = previous. Where the platform lets
+ * a remote-volume MediaSession receive the keys with the screen off it is used, otherwise
+ * the keys are taken while the screen is in front.
+ */
+@Composable
+internal fun PresenterVolumeKeys(connector: PairingConnector?) {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var volumeKeys by remember { mutableStateOf(prefs.presenterVolumeKeys) }
+    var sensitivity by remember { mutableStateOf(prefs.presenterSensitivity.toFloat()) }
+    val offScreen = android.os.Build.VERSION.SDK_INT < 33 || android.os.Build.VERSION.SDK_INT >= 36
+    DisposableEffect(volumeKeys, connector) {
+        if (!volumeKeys || connector == null) return@DisposableEffect onDispose { }
+        val session = if (offScreen) android.media.session.MediaSession(context, "GlidePresenter").apply {
+            setPlaybackState(android.media.session.PlaybackState.Builder()
+                .setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 0f).build())
+            setPlaybackToRemote(object : android.media.VolumeProvider(VOLUME_CONTROL_RELATIVE, 0, 0) {
+                override fun onAdjustVolume(direction: Int) {
+                    if (direction > 0) connector.sendPresenterSpecialKey(ProtocolPackets.KEY_NEXT_SLIDE)
+                    else if (direction < 0) connector.sendPresenterSpecialKey(ProtocolPackets.KEY_PREV_SLIDE)
+                }
+            })
+            isActive = true
+        } else null
+        if (session == null) {
+            MainActivity.keyInterceptor = { event ->
+                when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                        if (event.action == android.view.KeyEvent.ACTION_UP) connector.sendPresenterSpecialKey(ProtocolPackets.KEY_NEXT_SLIDE)
+                        true
+                    }
+                    android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                        if (event.action == android.view.KeyEvent.ACTION_UP) connector.sendPresenterSpecialKey(ProtocolPackets.KEY_PREV_SLIDE)
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+        onDispose {
+            session?.let { it.isActive = false; it.release() }
+            MainActivity.keyInterceptor = null
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    SwitchRow("Кнопки гучності гортають слайди", if (offScreen) "Працює й з вимкненим екраном" else "Поки цей екран відкрито", volumeKeys) {
+        prefs.presenterVolumeKeys = it; volumeKeys = it
+    }
+    Text("Чутливість указки: ${sensitivity.toInt()}", style = MaterialTheme.typography.bodyMedium)
+    Slider(sensitivity, { sensitivity = it }, onValueChangeFinished = { prefs.presenterSensitivity = sensitivity.toInt() }, valueRange = 0f..100f)
+}

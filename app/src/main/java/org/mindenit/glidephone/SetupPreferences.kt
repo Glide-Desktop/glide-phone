@@ -71,7 +71,22 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_MPRIS_VOLUME, true)
         set(value) { preferences.edit().putBoolean(KEY_MPRIS_VOLUME, value).apply() }
 
+    /** pref_presenter_enable_volume_keys: volume keys switch slides while presenting. */
+    var presenterVolumeKeys: Boolean
+        get() = preferences.getBoolean(KEY_PRESENTER_VOLUME, true)
+        set(value) { preferences.edit().putBoolean(KEY_PRESENTER_VOLUME, value).apply() }
+
+    /** pref_presenter_sensitivity (0-100, default 50). */
+    var presenterSensitivity: Int
+        get() = preferences.getInt(KEY_PRESENTER_SENSITIVITY, 50)
+        set(value) { preferences.edit().putInt(KEY_PRESENTER_SENSITIVITY, value).apply() }
+
+    /** PresenterActivity's pointer factor for the sensitivity setting (0.036 at 50). */
+    val presenterPointerFactor: Float get() = ((presenterSensitivity + 10) / 100f) / 10f * 0.6f
+
     private companion object {
+        const val KEY_PRESENTER_VOLUME = "presenter_volume_keys"
+        const val KEY_PRESENTER_SENSITIVITY = "presenter_sensitivity"
         const val KEY_MPRIS_NOTIFICATION = "mpris_notification"
         const val KEY_MPRIS_VOLUME = "mpris_volume_keys"
         const val KEY_CONTACTS_ACCEPTED = "contacts_accepted"

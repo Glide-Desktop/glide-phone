@@ -947,8 +947,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 }
             }
             ProtocolPackets.TYPE_SFTP_REQUEST -> if (body.optBoolean("startBrowsing", false)) startSftp(peerId)
-            ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST -> RemoteInput.handleShareInputDevices(body) { dx, dy ->
-                sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(dx, dy))
+            ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST -> if (plugins.isEnabled(peerId, DevicePlugin.INPUT_DEVICES)) {
+                RemoteInput.handleShareInputDevices(body) { dx, dy ->
+                    sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(dx, dy))
+                }
+            } else {
+                // Turned off here: give the computer its cursor straight back.
+                sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(body.optInt("deltax"), body.optInt("deltay")))
             }
             ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> runSms {
                 smsRequested()

@@ -18,7 +18,7 @@ the test plays the peer) or a real KDE Connect desktop.
 | Identity packet v8 (+ targetDeviceId / targetProtocolVersion) | `DeviceInfo`, `LanLinkProvider` | verified | loopback, both TLS roles |
 | Protocol v7 peers (no encrypted identity, v7 code) | v7 paths | verified | loopback v7 handshake |
 | UDP broadcast on start / network change / while unlinked | `LanLinkProvider.broadcastUdpIdentityPacket` | implemented | |
-| Dial peers whose broadcast we receive (TCP client, TLS server) | `udpPacketReceived` | verified | loopback dialer ↔ listener |
+| Dial peers whose broadcast we receive (TCP client, TLS server) | `udpPacketReceived` | implemented | dial + TLS-server role verified by loopback; `udpLoop` itself not exercised |
 | Accept incoming TCP (TLS client) | `tcpPacketReceived` | verified | daemon + loopback |
 | Single UDP 1716 owner feeding the device list | — | implemented | |
 | Rate limit per IP (1 s) and unpaired cap (42) | `rateLimitByIp`, `MAX_UNPAIRED_CONNECTIONS` | implemented | |
@@ -36,27 +36,27 @@ the test plays the peer) or a real KDE Connect desktop.
 
 | Plugin | State | Gaps |
 |---|---|---|
-| battery | verified | daemon |
-| clipboard (+connect timestamps, skip sensitive, floating activity, QS tile, notification action) | verified | floating activity read on emulator |
+| battery | implemented | live-checked with glide-phone in an earlier round, not re-run since |
+| clipboard (+connect timestamps, skip sensitive, floating activity, QS tile, notification action) | implemented | only the floating activity reading the clipboard is verified (emulator); tile, notification action and the packet leaving are not |
 | connectivityreport (per SIM, on change) | implemented | |
 | contacts (vCard metadata, consent dialog) | implemented | |
 | digitizer | implemented | |
 | findmyphone (alarm stream, ringtone, flashlight, found-it screen) | implemented | |
 | findremotedevice | implemented | |
 | inputdevicesreceiver (`shareinputdevices*`) | implemented | needs accessibility service enabled |
-| mousepad (send, keyboardstate, special keys, keystrokes share target) | verified | daemon |
+| mousepad (send, keyboardstate, special keys, keystrokes share target) | implemented | basic send live-checked earlier |
 | mousereceiver | implemented | AccessibilityService gestures + cursor |
 | mpris (control PC, album art, loop/shuffle, media notification, volume keys) | implemented | notification verified on emulator |
 | mprisreceiver (expose phone, album art payload) | implemented | |
 | notifications (send, icons, conversations, per-app filter, privacy, locked-only) | implemented | filter verified on emulator |
-| ping | verified | daemon |
-| presenter | verified | daemon |
+| ping | implemented | live-checked earlier |
+| presenter | implemented | live-checked earlier |
 | receivenotifications (opt-in per device, icon payload, silent) | implemented | |
 | remotekeyboard / remotekeyboardime | implemented | IME + AccessibilityService |
 | runcommand (output console, setup, stop, notification action) | implemented | no widget / device controls |
 | sftp (Android 11+, key + password login) | verified | loopback SSHD client login + list |
 | sftp on Android 7–10 (SAF) | missing | |
-| share (share target to chosen device, multi-file, update, progress, open) | verified | daemon |
+| share (share target to chosen device, multi-file, update, progress, open) | implemented | payload transfer verified by loopback; chosen-device routing untested |
 | sms | implemented | no MMS / attachments |
 | systemvolume | implemented | |
 | telephony (cancel+missed, request_mute, thumbnail, blocked numbers) | implemented | |

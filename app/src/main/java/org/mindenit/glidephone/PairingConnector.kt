@@ -84,8 +84,16 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val albumArtUrl: String = "",
         /** "None", "Track" or "Playlist"; null when the player does not support it. */
         val loopStatus: String? = null,
-        val shuffle: Boolean? = null
-    )
+        val shuffle: Boolean? = null,
+        /** elapsedRealtime when [position] was reported (MprisPlayer.lastPositionTime). */
+        val positionTime: Long = 0
+    ) {
+        /** Position now, advancing while playing (MprisPlayer.getPosition). */
+        fun currentPosition(now: Long = android.os.SystemClock.elapsedRealtime()): Long {
+            val moved = if (isPlaying && positionTime > 0) position + (now - positionTime) else position
+            return if (length > 0) moved.coerceIn(0, length) else moved.coerceAtLeast(0)
+        }
+    }
 
     data class VolumeSink(
         val name: String,
@@ -988,7 +996,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             album = body.optString("album", old.album),
             isPlaying = body.optBoolean("isPlaying", old.isPlaying),
             volume = body.optInt("volume", old.volume),
-            position = body.optLong("pos", old.position),
+            // Freeze the interpolated position on pause, restart the clock on new reports.
+            position = if (body.has("pos")) body.optLong("pos") else old.currentPosition(),
+            positionTime = android.os.SystemClock.elapsedRealtime(),
             length = body.optLong("length", old.length),
             canPlay = body.optBoolean("canPlay", old.canPlay),
             canPause = body.optBoolean("canPause", old.canPause),
@@ -1200,6 +1210,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun sendMediaShuffle(player: String, shuffle: Boolean): Boolean =
         sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("setShuffle", shuffle)))
+
+    fun sendMediaPosition(player: String, positionMs: Long): Boolean =
+        sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("SetPosition", positionMs)))
 
     fun sendMediaSeek(player: String, offsetMs: Long): Boolean =
         sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("Seek", offsetMs * 1000)))

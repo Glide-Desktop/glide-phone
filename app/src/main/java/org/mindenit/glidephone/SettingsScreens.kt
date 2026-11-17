@@ -356,6 +356,19 @@ internal fun MediaNotificationSettings() {
         prefs.mprisVolumeKeys = it; volumeKeys = it
         RemoteMediaNotification.update(context)
     }
+    var seek by remember { mutableStateOf(prefs.mprisSeekMicros) }
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Крок перемотування", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Box {
+            TextButton(onClick = { open = true }) { Text(seekLabel(seek)) }
+            DropdownMenu(open, { open = false }) {
+                listOf(10_000_000L, 20_000_000L, 30_000_000L, 60_000_000L, 120_000_000L).forEach { value ->
+                    DropdownMenuItem(text = { Text(seekLabel(value)) }, onClick = { prefs.mprisSeekMicros = value; seek = value; open = false })
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -409,4 +422,9 @@ internal fun PresenterVolumeKeys(connector: PairingConnector?) {
     }
     Text("Чутливість указки: ${sensitivity.toInt()}", style = MaterialTheme.typography.bodyMedium)
     Slider(sensitivity, { sensitivity = it }, onValueChangeFinished = { prefs.presenterSensitivity = sensitivity.toInt() }, valueRange = 0f..100f)
+}
+
+private fun seekLabel(micros: Long): String {
+    val seconds = micros / 1_000_000
+    return if (seconds >= 60) "${seconds / 60} хв" else "$seconds с"
 }

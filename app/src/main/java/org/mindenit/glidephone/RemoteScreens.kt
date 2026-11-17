@@ -12,11 +12,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Draw
-import androidx.compose.material.icons.outlined.Forward10
+import androidx.compose.material.icons.outlined.FastForward
+import androidx.compose.material.icons.outlined.FastRewind
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.RepeatOne
 import androidx.compose.material.icons.outlined.Shuffle
@@ -46,6 +46,7 @@ import kotlin.math.roundToInt
 /** Remote control for the computer's media players (kdeconnect.mpris). */
 @Composable
 internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val players = deviceId?.let { GlideHub.mediaPlayers[it] } ?: emptyList()
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     val player = selected?.takeIf { it in players } ?: players.firstOrNull()
@@ -99,10 +100,15 @@ internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
         if (subtitle.isNotEmpty()) {
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        val seekMs = remember { SetupPreferences(context).mprisSeekMicros / 1000 }
+        if (state != null && state.canSeek && state.length > 0) {
+            Spacer(Modifier.height(12.dp))
+            MediaPosition(state) { connector?.sendMediaPosition(player, it) }
+        }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state?.canSeek == true) {
-                IconButton(onClick = { connector?.sendMediaSeek(player, -10_000) }) { Icon(Icons.Outlined.Replay10, "Назад на 10 секунд") }
+                IconButton(onClick = { connector?.sendMediaSeek(player, -seekMs) }) { Icon(Icons.Outlined.FastRewind, "Назад на ${seekMs / 1000} с") }
             }
             IconButton(onClick = { connector?.sendMediaAction(player, "Previous") }, enabled = state?.canGoPrevious != false) {
                 Icon(Icons.Outlined.SkipPrevious, "Попередній трек", Modifier.size(32.dp))
@@ -115,7 +121,7 @@ internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
                 Icon(Icons.Outlined.SkipNext, "Наступний трек", Modifier.size(32.dp))
             }
             if (state?.canSeek == true) {
-                IconButton(onClick = { connector?.sendMediaSeek(player, 10_000) }) { Icon(Icons.Outlined.Forward10, "Вперед на 10 секунд") }
+                IconButton(onClick = { connector?.sendMediaSeek(player, seekMs) }) { Icon(Icons.Outlined.FastForward, "Вперед на ${seekMs / 1000} с") }
             }
         }
         if (state?.shuffle != null || state?.loopStatus != null) {
@@ -277,4 +283,41 @@ internal fun DigitizerDetail(connector: PairingConnector?) {
             }
         }
     }
+}
+
+
+/** Position bar ticking once a second while playing (MprisNowPlayingFragment.positionSeek). */
+@Composable
+private fun MediaPosition(state: PairingConnector.MediaState, onSeek: (Long) -> Unit) {
+    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    LaunchedEffect(state.isPlaying) {
+        while (state.isPlaying) {
+            kotlinx.coroutines.delay(1000)
+            now = android.os.SystemClock.elapsedRealtime()
+        }
+    }
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging ?: state.currentPosition(now).toFloat()
+    Column(Modifier.fillMaxWidth()) {
+        Slider(
+            value = shown.coerceIn(0f, state.length.toFloat()),
+            onValueChange = { dragging = it },
+            onValueChangeFinished = { dragging?.let { onSeek(it.toLong()) }; dragging = null },
+            valueRange = 0f..state.length.toFloat(),
+            modifier = Modifier.semantics { contentDescription = "Позиція відтворення" }
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatMediaTime(shown.toLong()), style = MaterialTheme.typography.bodySmall)
+            Text(formatMediaTime(state.length), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** MprisNowPlayingFragment.milisToProgress: m:ss, or h:mm:ss past an hour. */
+internal fun formatMediaTime(ms: Long): String {
+    val total = ms.coerceAtLeast(0) / 1000
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val sec = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }

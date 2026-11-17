@@ -84,7 +84,13 @@ internal class SetupPreferences(context: Context) {
     /** PresenterActivity's pointer factor for the sensitivity setting (0.036 at 50). */
     val presenterPointerFactor: Float get() = ((presenterSensitivity + 10) / 100f) / 10f * 0.6f
 
+    /** mpris_interval_time: seek step in microseconds (10 s default). */
+    var mprisSeekMicros: Long
+        get() = preferences.getLong(KEY_MPRIS_SEEK, 10_000_000L)
+        set(value) { preferences.edit().putLong(KEY_MPRIS_SEEK, value).apply() }
+
     private companion object {
+        const val KEY_MPRIS_SEEK = "mpris_interval_time"
         const val KEY_PRESENTER_VOLUME = "presenter_volume_keys"
         const val KEY_PRESENTER_SENSITIVITY = "presenter_sensitivity"
         const val KEY_MPRIS_NOTIFICATION = "mpris_notification"

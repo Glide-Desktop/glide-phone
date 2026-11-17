@@ -90,7 +90,8 @@ internal object RemoteMediaNotification {
         media.setPlaybackState(PlaybackState.Builder()
             .setActions(actions)
             .setState(if (state.isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                state.position, if (state.isPlaying) 1f else 0f)
+                state.position, if (state.isPlaying) 1f else 0f,
+                if (state.positionTime > 0) state.positionTime else android.os.SystemClock.elapsedRealtime())
             .build())
         configureVolume(app, media, deviceId)
         media.isActive = true

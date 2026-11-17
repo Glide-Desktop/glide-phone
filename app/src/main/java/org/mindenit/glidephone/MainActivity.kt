@@ -1173,45 +1173,39 @@ private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands:
 
 @Composable
 private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?, deviceId: String?) {
+    val context = LocalContext.current
     var typed by rememberSaveable { mutableStateOf("") }
     Body("Керуйте вказівником і клавіатурою комп’ютера з телефону.")
     Spacer(Modifier.height(16.dp))
     NotConnectedNotice(connector)
     SectionLabel("Сенсорна панель")
     Spacer(Modifier.height(8.dp))
-    Body("Ведіть пальцем, щоб рухати вказівник. Торкання — клік, подвійне — подвійний клік, утримання — правий клік.")
+    val mousepad = remember { MousepadSettings(context) }
+    Body(if (mousepad.doubleTapDrag)
+        "Ведіть пальцем, щоб рухати вказівник. Торкання — клік, двома пальцями — правий клік, тремя — середній, прокрутка — двома пальцями. Подвійне торкання й ведення — перетягування."
+    else
+        "Ведіть пальцем, щоб рухати вказівник. Торкання — клік, двома пальцями — правий клік, тремя — середній, прокрутка — двома пальцями. Утримання — перетягування.")
     Spacer(Modifier.height(12.dp))
-    Box(
+    TouchpadSurface(
+        connector,
         Modifier
             .fillMaxWidth()
             .height(240.dp)
             .background(LocalGlideColors.current.tonal, RoundedCornerShape(24.dp))
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { connector?.sendMouseClick("left") },
-                    onDoubleTap = { connector?.sendMouseClick("double") },
-                    onLongPress = { connector?.sendMouseClick("right") }
-                )
-            }
-            .pointerInput(Unit) {
-                detectDragGestures { change, drag ->
-                    change.consume()
-                    connector?.sendMouseMove(drag.x, drag.y)
-                }
-            },
-        contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Outlined.Mouse, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             Text("Зона тачпада", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
         }
     }
-    Spacer(Modifier.height(12.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { connector?.sendMouseClick("left") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Лівий") }
-        OutlinedButton(onClick = { connector?.sendMouseClick("middle") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Середній") }
-        OutlinedButton(onClick = { connector?.sendMouseClick("right") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Правий") }
+    if (mousepad.mouseButtons) {
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { connector?.sendMouseClick("left") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Лівий") }
+            OutlinedButton(onClick = { connector?.sendMouseClick("middle") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Середній") }
+            OutlinedButton(onClick = { connector?.sendMouseClick("right") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Правий") }
+        }
     }
     Spacer(Modifier.height(16.dp))
     SectionLabel("Прокрутка")
@@ -1224,7 +1218,9 @@ private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?, device
             .pointerInput(Unit) {
                 detectDragGestures { change, drag ->
                     change.consume()
-                    connector?.sendMouseScroll(0f, drag.y)
+                    // Same sign as KDE Connect's two-finger scroll: finger up scrolls down.
+                    val direction = if (mousepad.invertScroll) -1 else 1
+                    connector?.sendMouseScroll(0f, -drag.y * direction)
                 }
             },
         contentAlignment = Alignment.Center
@@ -1275,6 +1271,12 @@ private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?, device
         OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_ENTER) }, modifier = Modifier.weight(1f), shape = CircleShape) { Text("Enter") }
         OutlinedButton(onClick = { connector?.sendSpecialKey(ProtocolPackets.KEY_BACKSPACE) }, modifier = Modifier.weight(1f), shape = CircleShape) { Text("⌫") }
     }
+    Spacer(Modifier.height(20.dp))
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { showSettings = !showSettings }) {
+        Text(if (showSettings) "Сховати налаштування тачпада" else "Налаштування тачпада")
+    }
+    if (showSettings) MousepadSettingsSection()
 }
 
 @Composable

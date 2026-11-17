@@ -15,7 +15,17 @@ internal object IdentityPacket {
     private val validId = Regex("^[a-zA-Z0-9_-]{32,38}$")
     private val invalidName = Regex("[\\\"',;:.!?()\\[\\]<>]")
 
-    data class Peer(val id: String, val name: String, val version: Int, val type: String, val incomingCapabilities: Set<String>, val tcpPort: Int? = null)
+    data class Peer(
+        val id: String, val name: String, val version: Int, val type: String, val incomingCapabilities: Set<String>,
+        val tcpPort: Int? = null,
+        /** glideProtocol of a Glide Phone desktop; null for KDE Connect peers. */
+        val glideProtocol: Int? = null,
+    ) {
+        val isGlide: Boolean get() = glideProtocol != null && glideProtocol >= 1
+    }
+
+    /** Glide extensions version we announce (must match glide-phone-desktop's GLIDE_PROTOCOL). */
+    const val GLIDE_PROTOCOL = 1
 
     fun encode(id: String, name: String, tcpPort: Int? = null, targetDeviceId: String? = null, targetProtocolVersion: Int? = null): String {
         require(validId.matches(id))
@@ -29,6 +39,7 @@ internal object IdentityPacket {
             .put("protocolVersion", VERSION)
             .put("incomingCapabilities", JSONArray(INCOMING))
             .put("outgoingCapabilities", JSONArray(OUTGOING))
+            .put("glideProtocol", GLIDE_PROTOCOL)
         if (tcpPort != null) body.put("tcpPort", tcpPort)
         if (targetDeviceId != null) body.put("targetDeviceId", targetDeviceId)
         if (targetProtocolVersion != null) body.put("targetProtocolVersion", targetProtocolVersion)
@@ -59,7 +70,8 @@ internal object IdentityPacket {
             val tcpPort = if (body.has("tcpPort")) {
                 body.optInt("tcpPort", -1).takeIf { it in 1716..1764 } ?: return null
             } else null
-            Peer(id, name, version, body.optString("deviceType", "desktop"), incoming, tcpPort)
+            val glide = body.optInt("glideProtocol", -1).takeIf { it >= 1 }
+            Peer(id, name, version, body.optString("deviceType", "desktop"), incoming, tcpPort, glide)
         } catch (_: Exception) {
             null
         }

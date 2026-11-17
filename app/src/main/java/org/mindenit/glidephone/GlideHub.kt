@@ -41,6 +41,9 @@ internal object GlideHub {
         private set
     var volumeSinks by mutableStateOf<Map<String, List<PairingConnector.VolumeSink>>>(emptyMap())
         private set
+    /** Album art by URL (most recent few only). */
+    var mediaArt by mutableStateOf<Map<String, ByteArray>>(emptyMap())
+        private set
 
     @Volatile private var instance: PairingConnector? = null
 
@@ -154,6 +157,8 @@ internal object GlideHub {
             is PairingConnector.Event.MediaUpdate ->
                 mediaStates = mediaStates + (mediaKey(event.id, event.state.player) to event.state)
             is PairingConnector.Event.VolumeSinks -> volumeSinks = volumeSinks + (event.id to event.sinks)
+            is PairingConnector.Event.MediaArt ->
+                mediaArt = (mediaArt - event.url + (event.url to event.image)).entries.toList().takeLast(12).associate { it.key to it.value }
         }
     }
 }

@@ -260,4 +260,15 @@ class ProtocolPacketsTest {
         assertTrue(NetworkSettings.isValidHost("my-pc.local"))
         assertFalse(NetworkSettings.isValidHost("bad host"))
     }
+
+    @Test
+    fun mprisAdvertisesAlbumArtPayloadsAndArtReply() {
+        assertTrue(JSONObject(ProtocolPackets.mprisList(listOf("VLC"))).getJSONObject("body").getBoolean("supportAlbumArtPayload"))
+        val art = ProtocolPackets.mprisAlbumArt("VLC", "kdeconnect:/artUri?orig=x&kdeArtHash=1").getJSONObject("body")
+        assertTrue(art.getBoolean("transferringAlbumArt"))
+        assertEquals("VLC", art.getString("player"))
+        val state = JSONObject(ProtocolPackets.mprisState("VLC", "t", "a", "b", true, canSeek = false, length = 5000, albumArtUrl = "u")).getJSONObject("body")
+        assertFalse(state.getBoolean("canSeek"))
+        assertEquals("u", state.getString("albumArtUrl"))
+    }
 }

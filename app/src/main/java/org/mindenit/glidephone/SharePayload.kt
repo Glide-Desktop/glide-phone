@@ -136,6 +136,44 @@ internal object SharePayload {
         }
     }
 
+    /** Fetch a small payload (album art, icons) into memory; null on failure or if too large. */
+    fun receiveBytes(
+        identity: LocalIdentity.Identity,
+        peerCertificate: X509Certificate,
+        host: java.net.InetAddress,
+        port: Int,
+        size: Long,
+        maxBytes: Int = 8 * 1024 * 1024
+    ): ByteArray? {
+        if (size > maxBytes) return null
+        var secure: SSLSocket? = null
+        return try {
+            val raw = java.net.Socket()
+            raw.connect(InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS)
+            val tls = SSLContext.getInstance("TLSv1.2")
+            tls.init(arrayOf(IdentityKeyManager(identity)), arrayOf(PinnedServerCheck(peerCertificate)), null)
+            secure = (tls.socketFactory.createSocket(raw, host.hostAddress, port, true) as SSLSocket).apply {
+                useClientMode = true
+                soTimeout = HANDSHAKE_TIMEOUT_MS
+                startHandshake()
+            }
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(32 * 1024)
+            val input = secure.inputStream
+            while (size < 0 || out.size() < size) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                out.write(buffer, 0, read)
+                if (out.size() > maxBytes) return null
+            }
+            if (size >= 0 && out.size() < size) null else out.toByteArray()
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { secure?.close() }
+        }
+    }
+
     private fun openDownload(context: android.content.Context, name: String): Pair<Uri?, java.io.OutputStream>? {
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val values = android.content.ContentValues().apply {

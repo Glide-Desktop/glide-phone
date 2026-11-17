@@ -17,6 +17,11 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.RepeatOne
+import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.*
@@ -69,7 +74,19 @@ internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
         Modifier.fillMaxWidth().background(LocalGlideColors.current.tonal, RoundedCornerShape(24.dp)).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(Icons.Outlined.MusicNote, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+        val artBytes = state?.albumArtUrl?.takeIf { it.isNotEmpty() }?.let { GlideHub.mediaArt[it] }
+        val art = remember(artBytes) {
+            artBytes?.let { runCatching { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }.getOrNull() }
+        }
+        if (art != null) {
+            androidx.compose.foundation.Image(
+                art, contentDescription = "Обкладинка",
+                modifier = Modifier.size(180.dp).clip(RoundedCornerShape(20.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        } else {
+            Icon(Icons.Outlined.MusicNote, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+        }
         Spacer(Modifier.height(12.dp))
         Text(
             state?.title?.ifBlank { null } ?: player,
@@ -97,6 +114,27 @@ internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
             }
             if (state?.canSeek == true) {
                 IconButton(onClick = { connector?.sendMediaSeek(player, 10_000) }) { Icon(Icons.Outlined.Forward10, "Вперед на 10 секунд") }
+            }
+        }
+        if (state?.shuffle != null || state?.loopStatus != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.shuffle?.let { shuffle ->
+                    IconToggleButton(checked = shuffle, onCheckedChange = { connector?.sendMediaShuffle(player, it) }) {
+                        Icon(Icons.Outlined.Shuffle, if (shuffle) "Перемішування увімкнено" else "Перемішування вимкнено",
+                            tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                state.loopStatus?.let { loop ->
+                    // KDE Connect cycles None -> Track -> Playlist -> None.
+                    val next = when (loop) { "None" -> "Track"; "Track" -> "Playlist"; else -> "None" }
+                    IconButton(onClick = { connector?.sendMediaLoop(player, next) }) {
+                        Icon(
+                            if (loop == "Track") Icons.Outlined.RepeatOne else Icons.Outlined.Repeat,
+                            "Повтор: $loop",
+                            tint = if (loop == "None") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }

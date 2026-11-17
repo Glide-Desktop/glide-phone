@@ -124,7 +124,7 @@ internal object ProtocolPackets {
     fun mprisList(players: List<String>): String = JSONObject()
         .put("id", System.currentTimeMillis())
         .put("type", TYPE_MPRIS)
-        .put("body", JSONObject().put("playerList", JSONArray(players)).put("supportAlbumArtPayload", false))
+        .put("body", JSONObject().put("playerList", JSONArray(players)).put("supportAlbumArtPayload", true))
         .toString() + "\n"
 
     fun mprisState(
@@ -138,8 +138,10 @@ internal object ProtocolPackets {
         canGoNext: Boolean = true,
         canGoPrevious: Boolean = true,
         volume: Int = 100,
-        length: Long = -1,
-        pos: Long = 0
+        length: Long = 0,
+        pos: Long = 0,
+        canSeek: Boolean = length > 0,
+        albumArtUrl: String = ""
     ): String {
         val body = JSONObject()
             .put("player", player)
@@ -147,19 +149,25 @@ internal object ProtocolPackets {
             .put("artist", artist)
             .put("nowPlaying", title) // older GSConnect only reads this field
             .put("album", album)
-            .put("albumArtUrl", "")
+            .put("albumArtUrl", albumArtUrl)
             .put("isPlaying", isPlaying)
             .put("canPlay", canPlay)
             .put("canPause", canPause)
             .put("canGoNext", canGoNext)
             .put("canGoPrevious", canGoPrevious)
-            .put("canSeek", length > 0)
+            .put("canSeek", canSeek)
             .put("volume", volume)
             .put("length", length)
             .put("pos", pos)
         return JSONObject().put("id", System.currentTimeMillis())
             .put("type", TYPE_MPRIS).put("body", body).toString() + "\n"
     }
+
+    /** Album art reply: the JPEG itself travels as the packet's payload. */
+    fun mprisAlbumArt(player: String, url: String): JSONObject = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_MPRIS)
+        .put("body", JSONObject().put("player", player).put("transferringAlbumArt", true).put("albumArtUrl", url))
 
     // ---- System volume ----
 

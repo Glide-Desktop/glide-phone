@@ -53,6 +53,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         data class MediaPlayers(val id: String, val players: List<String>) : Event
         data class MediaUpdate(val id: String, val state: MediaState) : Event
         data class VolumeSinks(val id: String, val sinks: List<VolumeSink>) : Event
+        data class MediaArt(val url: String, val image: ByteArray) : Event
     }
 
     data class RemoteCommand(val key: String, val name: String, val command: String)
@@ -75,7 +76,11 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val canPause: Boolean = true,
         val canGoNext: Boolean = true,
         val canGoPrevious: Boolean = true,
-        val canSeek: Boolean = false
+        val canSeek: Boolean = false,
+        val albumArtUrl: String = "",
+        /** "None", "Track" or "Playlist"; null when the player does not support it. */
+        val loopStatus: String? = null,
+        val shuffle: Boolean? = null
     )
 
     data class VolumeSink(
@@ -597,6 +602,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 mediaStates.keys.removeAll { it.startsWith("$id/") }
                 volumeSinks.remove(id)
                 iconsSent.remove(id)
+                artSupport.remove(id)
                 if (target == id) target = connections.keys.firstOrNull()
                 if (connections.isEmpty()) NotificationBridge.detach(this)
                 emit(Event.Disconnected(id))
@@ -705,7 +711,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             }
             ProtocolPackets.TYPE_MPRIS -> handleMpris(peerId, body)
             ProtocolPackets.TYPE_MPRIS_REQUEST -> {
-                MediaControl.handleRequest(app, body)?.let { sendPacketTo(peerId, it) }
+                MediaControl.handleRequest(app, body) { json, art ->
+                    sendWithPayload(peerId, json, art, ICON_ACCEPT_TIMEOUT_MS)
+                }?.let { sendPacketTo(peerId, it) }
             }
             ProtocolPackets.TYPE_SYSTEMVOLUME -> handleVolume(peerId, body)
             ProtocolPackets.TYPE_CONTACTS_REQUEST_UIDS -> {
@@ -805,9 +813,17 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             }
             return
         }
+        if (body.has("supportAlbumArtPayload")) artSupport[peerId] = body.optBoolean("supportAlbumArtPayload", false)
         val player = body.optString("player").takeIf { it.isNotEmpty() } ?: return
+        if (body.optBoolean("transferringAlbumArt", false)) {
+            receiveAlbumArt(peerId, body)
+            return
+        }
         val key = "$peerId/$player"
         val old = mediaStates[key] ?: MediaState(player)
+        val artUrl = body.optString("albumArtUrl", old.albumArtUrl).takeIf { url ->
+            url.isEmpty() || runCatching { android.net.Uri.parse(url).scheme in ART_SCHEMES }.getOrDefault(false)
+        }.orEmpty()
         val updated = old.copy(
             title = body.optString("title", old.title),
             artist = body.optString("artist", old.artist),
@@ -820,10 +836,57 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             canPause = body.optBoolean("canPause", old.canPause),
             canGoNext = body.optBoolean("canGoNext", old.canGoNext),
             canGoPrevious = body.optBoolean("canGoPrevious", old.canGoPrevious),
-            canSeek = body.optBoolean("canSeek", old.canSeek)
+            canSeek = body.optBoolean("canSeek", old.canSeek),
+            albumArtUrl = artUrl,
+            loopStatus = if (body.has("loopStatus")) body.optString("loopStatus") else old.loopStatus,
+            shuffle = if (body.has("shuffle")) body.optBoolean("shuffle") else old.shuffle
         )
         mediaStates[key] = updated
         emit(Event.MediaUpdate(peerId, updated))
+        if (artUrl.isNotEmpty() && artUrl != old.albumArtUrl) fetchAlbumArt(peerId, player, artUrl)
+    }
+
+    private val artSupport = ConcurrentHashMap<String, Boolean>()
+
+    /** AlbumArtCache: http(s) art is downloaded directly, local art is asked for as a payload. */
+    private fun fetchAlbumArt(peerId: String, player: String, url: String) {
+        val scheme = runCatching { android.net.Uri.parse(url).scheme }.getOrNull()
+        if (scheme == "http" || scheme == "https") {
+            try {
+                downloads.execute {
+                    val bytes = runCatching {
+                        (java.net.URL(url).openConnection() as java.net.HttpURLConnection).run {
+                            connectTimeout = 10_000; readTimeout = 10_000
+                            try {
+                                if (responseCode !in 200..299 || contentLengthLong > MAX_ART_BYTES) null
+                                else inputStream.use { it.readBytes() }.takeIf { it.size <= MAX_ART_BYTES }
+                            } finally { disconnect() }
+                        }
+                    }.getOrNull()
+                    if (bytes != null) emit(Event.MediaArt(url, bytes))
+                }
+            } catch (_: RejectedExecutionException) {
+            }
+        } else if (artSupport[peerId] == true) {
+            sendPacketTo(peerId, ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("albumArtUrl", url)))
+        }
+    }
+
+    private fun receiveAlbumArt(peerId: String, body: JSONObject) {
+        val url = body.optString("albumArtUrl").takeIf { it.isNotEmpty() } ?: return
+        val port = body.optInt(ProtocolPackets.KEY_PAYLOAD_PORT, -1).takeIf { it > 0 } ?: return
+        val size = body.optLong(ProtocolPackets.KEY_PAYLOAD_SIZE, -1)
+        val connection = connections[peerId] ?: return
+        try {
+            downloads.execute {
+                val bytes = runCatching {
+                    SharePayload.receiveBytes(LocalIdentity().loadOrCreate(), connection.pending.certificate,
+                        connection.pending.socket.inetAddress, port, size, MAX_ART_BYTES.toInt())
+                }.getOrNull()
+                if (bytes != null) emit(Event.MediaArt(url, bytes))
+            }
+        } catch (_: RejectedExecutionException) {
+        }
     }
 
     private fun handleVolume(peerId: String, body: JSONObject) {
@@ -969,6 +1032,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendMediaVolume(player: String, volume: Int): Boolean =
         sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("setVolume", volume.coerceIn(0, 100))))
 
+    fun sendMediaLoop(player: String, status: String): Boolean =
+        sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("setLoopStatus", status)))
+
+    fun sendMediaShuffle(player: String, shuffle: Boolean): Boolean =
+        sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("setShuffle", shuffle)))
+
     fun sendMediaSeek(player: String, offsetMs: Long): Boolean =
         sendPacket(ProtocolPackets.mprisRequest(JSONObject().put("player", player).put("Seek", offsetMs * 1000)))
 
@@ -1010,6 +1079,27 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendShareText(text: String): Boolean = sendPacket(ProtocolPackets.shareText(text))
     fun sendShareUrl(url: String): Boolean = sendPacket(ProtocolPackets.shareUrl(url))
 
+    /**
+     * Send [json] to one device with [bytes] attached as its payload (top-level payloadSize
+     * and payloadTransferInfo). Returns false when the packet could not be queued.
+     */
+    private fun sendWithPayload(deviceId: String, json: JSONObject, bytes: ByteArray, acceptTimeoutMs: Int, onSent: () -> Unit = {}): Boolean {
+        val connection = connections[deviceId] ?: return false
+        return try {
+            io.execute {
+                val attached = runCatching {
+                    val handle = SharePayload.serve(LocalIdentity().loadOrCreate(), connection.pending.certificate,
+                        java.io.ByteArrayInputStream(bytes), bytes.size.toLong(), acceptTimeoutMs = acceptTimeoutMs)
+                    json.put("payloadSize", bytes.size.toLong()).put("payloadTransferInfo", JSONObject().put("port", handle.port))
+                }.isSuccess
+                if (sendPacketTo(deviceId, json.toString() + "\n") && attached) onSent()
+            }
+            true
+        } catch (_: RejectedExecutionException) {
+            false
+        }
+    }
+
     /** Per device: notification key -> hash of the icon that device already has. */
     private val iconsSent = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
@@ -1031,20 +1121,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 if (sendPacketTo(id, json.toString() + "\n")) any = true
                 return@forEach
             }
-            any = true
-            try {
-                io.execute {
-                    val withPayload = runCatching {
-                        val identity = LocalIdentity().loadOrCreate()
-                        val handle = SharePayload.serve(identity, connection.pending.certificate,
-                            java.io.ByteArrayInputStream(icon), icon.size.toLong(), acceptTimeoutMs = ICON_ACCEPT_TIMEOUT_MS)
-                        json.put("payloadSize", icon.size.toLong())
-                            .put("payloadTransferInfo", JSONObject().put("port", handle.port))
-                    }.isSuccess
-                    if (sendPacketTo(id, json.toString() + "\n") && withPayload) sent[key] = iconHash
-                }
-            } catch (_: RejectedExecutionException) {
-            }
+            if (sendWithPayload(id, json, icon, ICON_ACCEPT_TIMEOUT_MS) { sent[key] = iconHash }) any = true
         }
         return any
     }
@@ -1171,6 +1248,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val DIAL_INTERVAL_MS = 3_000L
         const val RATE_LIMIT_MS = 1_000L
         const val ICON_ACCEPT_TIMEOUT_MS = 10_000
+        const val MAX_ART_BYTES = 8L * 1024 * 1024
+        val ART_SCHEMES = setOf("http", "https", "file", "kdeconnect")
         const val MAX_UNPAIRED_CONNECTIONS = 42
         const val PAYLOAD_TIMEOUT_MS = 60L * 60 * 1000
     }

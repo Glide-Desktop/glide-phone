@@ -104,6 +104,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val sender = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, ArrayBlockingQueue(128))
     /** Incoming payloads are fetched strictly one at a time, off the packet-sending thread. */
     private val downloads = Executors.newSingleThreadExecutor()
+    /** Small incoming payloads (notification icons, album art) so a big file can't stall them. */
+    private val smallDownloads = Executors.newFixedThreadPool(2)
     private val generation = AtomicLong()
     private val closed = AtomicBoolean(false)
 
@@ -637,6 +639,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 volumeSinks.remove(id)
                 iconsSent.remove(id)
                 payloadQueues.remove(id)?.shutdownNow()
+                iconMisses.remove(id)
                 artSupport.remove(id)
                 stopSftp(id)
                 if (target == id) target = connections.keys.firstOrNull()
@@ -771,15 +774,19 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     val port = body.optInt(ProtocolPackets.KEY_PAYLOAD_PORT, -1)
                     val size = body.optLong(ProtocolPackets.KEY_PAYLOAD_SIZE, -1)
                     val connection = connections[peerId]
+                    // A later update or cancel must win over a post still fetching its icon.
+                    val seqKey = "$peerId/$nid"
+                    val seq = notificationSeq.merge(seqKey, 1L, Long::plus)!!
+                    if (event.cancel) notificationSeq.remove(seqKey)
                     if (!event.cancel && port > 0 && size > 0 && connection != null) {
                         // The icon comes as a payload (ReceiveNotificationsPlugin's largeIcon).
                         try {
-                            downloads.execute {
+                            smallDownloads.execute {
                                 val icon = runCatching {
                                     SharePayload.receiveBytes(LocalIdentity().loadOrCreate(), connection.pending.certificate,
                                         connection.pending.socket.inetAddress, port, size, MAX_ART_BYTES.toInt())
                                 }.getOrNull()
-                                emit(event.copy(icon = icon))
+                                if (notificationSeq[seqKey] == seq) emit(event.copy(icon = icon))
                             }
                         } catch (_: RejectedExecutionException) {
                             emit(event)
@@ -1004,7 +1011,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val scheme = runCatching { android.net.Uri.parse(url).scheme }.getOrNull()
         if (scheme == "http" || scheme == "https") {
             try {
-                downloads.execute {
+                smallDownloads.execute {
                     val bytes = runCatching {
                         (java.net.URL(url).openConnection() as java.net.HttpURLConnection).run {
                             connectTimeout = 10_000; readTimeout = 10_000
@@ -1029,7 +1036,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val size = body.optLong(ProtocolPackets.KEY_PAYLOAD_SIZE, -1)
         val connection = connections[peerId] ?: return
         try {
-            downloads.execute {
+            smallDownloads.execute {
                 val bytes = runCatching {
                     SharePayload.receiveBytes(LocalIdentity().loadOrCreate(), connection.pending.certificate,
                         connection.pending.socket.inetAddress, port, size, MAX_ART_BYTES.toInt())
@@ -1239,7 +1246,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
      * Send [json] to one device with [bytes] attached as its payload (top-level payloadSize
      * and payloadTransferInfo). Returns false when the packet could not be queued.
      */
-    private fun sendWithPayload(deviceId: String, json: JSONObject, bytes: ByteArray, acceptTimeoutMs: Int, onSent: () -> Unit = {}): Boolean {
+    private fun sendWithPayload(deviceId: String, json: JSONObject, bytes: ByteArray, acceptTimeoutMs: Int,
+                                onDone: (fetched: Boolean) -> Unit = {}): Boolean {
         val connection = connections[deviceId] ?: return false
         // One small payload at a time per device, so a burst (e.g. resending every
         // notification icon after a reconnect) cannot use up the 1739-1764 port range.
@@ -1257,8 +1265,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val sent = sendPacketTo(deviceId, json.toString() + "\n")
                 if (handle != null) {
                     if (sent) {
-                        onSent()
-                        handle.await(acceptTimeoutMs + 5_000L)
+                        onDone(handle.await(acceptTimeoutMs + 5_000L))
                     } else {
                         handle.cancel()
                     }
@@ -1271,6 +1278,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     }
 
     private val payloadQueues = ConcurrentHashMap<String, java.util.concurrent.ExecutorService>()
+    private val notificationSeq = ConcurrentHashMap<String, Long>()
+    /** Per device: notification icons offered in a row that it never fetched. */
+    private val iconMisses = ConcurrentHashMap<String, Int>()
 
     /** Per device: notification key -> hash of the icon that device already has. */
     private val iconsSent = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
@@ -1289,11 +1299,20 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             val sent = iconsSent.getOrPut(id) { ConcurrentHashMap() }
             val json = runCatching { JSONObject(packet) }.getOrNull() ?: return@forEach
             json.getJSONObject("body").put("payloadHash", iconHash)
-            if (sent[key] == iconHash) {
+            // Already has this icon, or never fetches icons (each unfetched one would hold
+            // the device's payload queue for the whole accept timeout).
+            if (sent[key] == iconHash || (iconMisses[id] ?: 0) >= MAX_ICON_MISSES) {
                 if (sendPacketTo(id, json.toString() + "\n")) any = true
                 return@forEach
             }
-            if (sendWithPayload(id, json, icon, ICON_ACCEPT_TIMEOUT_MS) { sent[key] = iconHash }) any = true
+            if (sendWithPayload(id, json, icon, ICON_ACCEPT_TIMEOUT_MS) { fetched ->
+                    if (fetched) {
+                        sent[key] = iconHash
+                        iconMisses.remove(id)
+                    } else {
+                        iconMisses.merge(id, 1, Int::plus)
+                    }
+                }) any = true
         }
         return any
     }
@@ -1398,6 +1417,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         NotificationBridge.detach(this)
         sender.shutdownNow()
         downloads.shutdownNow()
+        smallDownloads.shutdownNow()
         payloadQueues.values.forEach { it.shutdownNow() }
         io.shutdownNow()
     }
@@ -1426,6 +1446,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val DIAL_INTERVAL_MS = 3_000L
         const val RATE_LIMIT_MS = 1_000L
         const val ICON_ACCEPT_TIMEOUT_MS = 10_000
+        const val MAX_ICON_MISSES = 2
         const val MAX_ART_BYTES = 8L * 1024 * 1024
         val ART_SCHEMES = setOf("http", "https", "file", "kdeconnect")
         const val MAX_UNPAIRED_CONNECTIONS = 42

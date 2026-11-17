@@ -1240,6 +1240,17 @@ private fun ColumnScope.RemoteControlDetail(connector: PairingConnector?, device
     SectionLabel("Сенсорна панель")
     Spacer(Modifier.height(8.dp))
     val mousepad = remember { MousepadSettings(context) }
+    // MousePadPlugin.getUiButtons: a TV peer also gets the Bigscreen remote.
+    val isTv = remember(deviceId) { connector?.pairedDevices()?.firstOrNull { it.id == deviceId }?.type == "tv" }
+    if (isTv) {
+        SectionLabel("Пульт для ТБ")
+        Spacer(Modifier.height(8.dp))
+        TvRemote(connector, deviceId)
+        Spacer(Modifier.height(8.dp))
+        BigscreenSettingsSection()
+        Spacer(Modifier.height(16.dp))
+        if (BigscreenSettings(context).hideMouseInput) return
+    }
     Body(if (mousepad.doubleTapDrag)
         "Ведіть пальцем, щоб рухати вказівник. Торкання — клік, двома пальцями — правий клік, тремя — середній, прокрутка — двома пальцями. Подвійне торкання й ведення — перетягування."
     else

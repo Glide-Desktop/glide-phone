@@ -102,6 +102,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     @Volatile private var server: ServerSocket? = null
     @Volatile private var udp: DatagramSocket? = null
     private val lastDial = ConcurrentHashMap<String, Long>()
+    private val mdns = LanMdns(
+        context,
+        identity = { runCatching { LocalIdentity().loadOrCreate().id to deviceName }.getOrNull() },
+        onPeerResolved = { _, address -> sendIdentityTo(address) },
+        isKnown = { id -> connections.containsKey(id) || pending.containsKey(id) }
+    )
     private val advertising = AtomicBoolean(false)
     @Volatile private var broadcaster: Thread? = null
 
@@ -119,7 +125,16 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     /** Like KDE Connect, announce ourselves again whenever the network changes. */
     private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: android.net.Network) {
-            main.postDelayed({ if (advertising.get()) broadcastNow() }, 2_000)
+            main.postDelayed({
+                if (!advertising.get()) return@postDelayed
+                broadcastNow()
+                io.runCatching {
+                    execute {
+                        server?.takeIf { !it.isClosed }?.let { mdns.startAnnouncing(it.localPort) }
+                        mdns.rediscover()
+                    }
+                }
+            }, 2_000)
         }
     }
 
@@ -152,7 +167,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun setDeviceName(name: String) {
         deviceName = name
-        if (advertising.get()) broadcastNow()
+        if (advertising.get()) {
+            broadcastNow()
+            server?.takeIf { !it.isClosed }?.let { mdns.reannounce(it.localPort) }
+        }
     }
 
     private fun targetSupports(type: String): Boolean =
@@ -191,6 +209,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             (app.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
                 ?.unregisterNetworkCallback(networkCallback)
         }
+        runCatching { mdns.stop() }
         runCatching { server?.close() }
         server = null
         runCatching { udp?.close() }
@@ -223,6 +242,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 if (listener != null) {
                     Thread({ acceptLoop(listener) }, "GlideServer-Accept").apply { isDaemon = true; start() }
                     first = true
+                    mdns.stopAnnouncing()
+                    mdns.startAnnouncing(listener.localPort)
+                    mdns.startDiscovering()
                 }
             }
             if (udp?.isClosed != false) {
@@ -350,6 +372,21 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                             runCatching { udp.send(DatagramPacket(bytes, bytes.size, addr, 1716)) }
                         }
                     }
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+        }
+    }
+
+    /** Unicast our identity to one address (mDNS result); the peer then opens the link. */
+    private fun sendIdentityTo(address: InetAddress) {
+        val port = server?.takeIf { !it.isClosed }?.localPort ?: return
+        try {
+            io.execute {
+                runCatching {
+                    val identity = LocalIdentity().loadOrCreate()
+                    val bytes = IdentityPacket.encode(identity.id, deviceName, port).toByteArray(Charsets.UTF_8)
+                    DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, address, 1716)) }
                 }
             }
         } catch (_: RejectedExecutionException) {

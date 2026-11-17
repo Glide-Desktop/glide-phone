@@ -24,6 +24,7 @@ class GlideService : Service() {
         running = true
         promote()
         if (SetupPreferences(this).isSetupComplete) GlideHub.connector(this).startServer()
+        ScreenshotSync.apply(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

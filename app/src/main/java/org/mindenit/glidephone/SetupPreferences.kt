@@ -134,7 +134,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_PERSISTENT_NOTIFICATION, true)
         set(value) { preferences.edit().putBoolean(KEY_PERSISTENT_NOTIFICATION, value).apply() }
 
+    /** Glide-only: new screenshots go to the connected computers by themselves. */
+    var sendScreenshots: Boolean
+        get() = preferences.getBoolean(KEY_SEND_SCREENSHOTS, false)
+        set(value) { preferences.edit().putBoolean(KEY_SEND_SCREENSHOTS, value).apply() }
+
     private companion object {
+        const val KEY_SEND_SCREENSHOTS = "send_screenshots"
         const val KEY_PERSISTENT_NOTIFICATION = "persistent_notification"
         const val KEY_SEND_KEYSTROKES = "pref_sendkeystrokes_enabled"
         const val KEY_SAFE_TEXT = "pref_send_safe_text_immediately"

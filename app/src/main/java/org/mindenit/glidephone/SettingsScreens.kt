@@ -472,6 +472,21 @@ internal fun ShareSettingsSection() {
     SwitchRow("Звук після передавання", "Сповіщати звуком і вібрацією, коли файл отримано чи надіслано", alert) {
         prefs.shareAlert = it; alert = it
     }
+    var screenshots by remember { mutableStateOf(prefs.sendScreenshots && ScreenshotSync.hasPermission(context)) }
+    val askPhotos = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        prefs.sendScreenshots = granted
+        screenshots = granted
+        ScreenshotSync.apply(context)
+    }
+    SwitchRow("Надсилати знімки екрана", "Нові знімки екрана одразу йдуть на підключений комп’ютер (лише Glide)", screenshots) { on ->
+        if (on && !ScreenshotSync.hasPermission(context)) {
+            askPhotos.launch(ScreenshotSync.permission)
+        } else {
+            prefs.sendScreenshots = on
+            screenshots = on
+            ScreenshotSync.apply(context)
+        }
+    }
 }
 
 /** DigitizerPlugin settings: the finger "draw" button. */

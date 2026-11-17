@@ -37,6 +37,11 @@ class GlideService : Service() {
     }
 
     private fun promote() {
+        // Before Android 8 a background service may run without a notification (KDE's toggle).
+        if (Build.VERSION.SDK_INT < 26 && !SetupPreferences(this).persistentNotification) {
+            @Suppress("DEPRECATION") stopForeground(true)
+            return
+        }
         runCatching {
             val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
             if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, buildNotification(this), type)
@@ -45,13 +50,19 @@ class GlideService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "glide_status"
+        const val CHANNEL_ID = "glide_status"
         private const val NOTIFICATION_ID = 1
         @Volatile private var running = false
 
         /** Update the ongoing notification after the set of connected devices changed. */
         internal fun refresh(context: Context) {
             if (!running) return
+            if (Build.VERSION.SDK_INT < 26) {
+                val intent = Intent(context, GlideService::class.java)
+                // Re-evaluate the persistent-notification setting.
+                runCatching { context.startService(intent) }
+                if (!SetupPreferences(context).persistentNotification) return
+            }
             runCatching {
                 context.getSystemService(NotificationManager::class.java)
                     ?.notify(NOTIFICATION_ID, buildNotification(context))

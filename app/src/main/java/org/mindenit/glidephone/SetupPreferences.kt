@@ -129,7 +129,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_SAFE_TEXT, true)
         set(value) { preferences.edit().putBoolean(KEY_SAFE_TEXT, value).apply() }
 
+    /** setting_persistent_notification (before Android 8 channels existed). */
+    var persistentNotification: Boolean
+        get() = preferences.getBoolean(KEY_PERSISTENT_NOTIFICATION, true)
+        set(value) { preferences.edit().putBoolean(KEY_PERSISTENT_NOTIFICATION, value).apply() }
+
     private companion object {
+        const val KEY_PERSISTENT_NOTIFICATION = "persistent_notification"
         const val KEY_SEND_KEYSTROKES = "pref_sendkeystrokes_enabled"
         const val KEY_SAFE_TEXT = "pref_send_safe_text_immediately"
         const val KEY_RUNCOMMAND_NAME_TITLE = "set_runcommand_name_as_title"

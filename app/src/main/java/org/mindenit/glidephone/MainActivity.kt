@@ -1014,6 +1014,8 @@ private fun DetailScreen(
         ) {
             when (detail) {
                 Detail.SETTINGS -> {
+                    AppSettingsSection()
+                    Spacer(Modifier.height(16.dp))
                     Body("Оберіть можливості, якими хочете користуватися при підключенні.")
                     Spacer(Modifier.height(20.dp))
                     FeatureToggleList(selectedFeatures, onFeatureChange)

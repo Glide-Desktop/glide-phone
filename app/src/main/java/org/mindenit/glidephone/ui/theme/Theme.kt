@@ -86,7 +86,11 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun GlidePhoneTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = when (AppTheme.current(androidx.compose.ui.platform.LocalContext.current)) {
+        AppTheme.LIGHT -> false
+        AppTheme.DARK -> true
+        else -> isSystemInDarkTheme()
+    },
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
@@ -97,5 +101,25 @@ fun GlidePhoneTheme(
             typography = Typography,
             content = content,
         )
+    }
+}
+
+
+/** KDE Connect's app theme setting (KEY_APP_THEME): light, dark or follow the system. */
+object AppTheme {
+    const val SYSTEM = "follow_system"
+    const val LIGHT = "light"
+    const val DARK = "dark"
+    private val state = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    private fun prefs(context: android.content.Context) =
+        context.applicationContext.getSharedPreferences("glide_setup", android.content.Context.MODE_PRIVATE)
+
+    fun current(context: android.content.Context): String =
+        state.value ?: (prefs(context).getString("theme_pref", SYSTEM) ?: SYSTEM).also { state.value = it }
+
+    fun set(context: android.content.Context, value: String) {
+        prefs(context).edit().putString("theme_pref", value).apply()
+        state.value = value
     }
 }

@@ -551,3 +551,53 @@ internal fun SftpFoldersSection(connector: PairingConnector?, deviceId: String?)
     TextButton(onClick = { picker.launch(null) }) { Text("Додати папку") }
     Spacer(Modifier.height(8.dp))
 }
+
+
+/** SettingsFragment: theme and the persistent notification. */
+@Composable
+internal fun AppSettingsSection() {
+    val context = LocalContext.current
+    val current = org.mindenit.glidephone.ui.theme.AppTheme.current(context)
+    val themes = linkedMapOf(
+        org.mindenit.glidephone.ui.theme.AppTheme.SYSTEM to "Як у системі",
+        org.mindenit.glidephone.ui.theme.AppTheme.LIGHT to "Світла",
+        org.mindenit.glidephone.ui.theme.AppTheme.DARK to "Темна",
+    )
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Тема", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Box {
+            TextButton(onClick = { open = true }) { Text(themes[current] ?: current) }
+            DropdownMenu(open, { open = false }) {
+                themes.forEach { (key, label) ->
+                    DropdownMenuItem(text = { Text(label) }, onClick = {
+                        org.mindenit.glidephone.ui.theme.AppTheme.set(context, key); open = false
+                    })
+                }
+            }
+        }
+    }
+    if (android.os.Build.VERSION.SDK_INT >= 26) {
+        // setting_persistent_notification_oreo: Android controls it per channel.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Постійне сповіщення", style = MaterialTheme.typography.titleMedium)
+                Text("Можна приховати в налаштуваннях каналу", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = {
+                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, GlideService.CHANNEL_ID)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }) { Text("Відкрити") }
+        }
+    } else {
+        val prefs = remember { SetupPreferences(context) }
+        var shown by remember { mutableStateOf(prefs.persistentNotification) }
+        SwitchRow("Постійне сповіщення", "Показувати стан підключення в шторці", shown) {
+            prefs.persistentNotification = it; shown = it
+            GlideService.refresh(context)
+        }
+    }
+}

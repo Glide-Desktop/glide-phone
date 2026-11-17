@@ -70,3 +70,24 @@ the test plays the peer) or a real KDE Connect desktop.
 | Per-device plugin enable/disable (KDE defaults) | verified (settings gating test) |
 | Quick-settings clipboard tile | implemented |
 | Home widget, device controls (runcommand) | missing |
+
+## Glide Phone ↔ glide-phone-desktop
+
+The app pairs only with Glide desktops (identity field `glideProtocol`); see
+[FEATURES.md](FEATURES.md) for the two-sided feature matrix. Verified live against the real
+desktop build by `scripts/live-desktop-test.sh` (`LiveDesktopTest`): marker, pairing, the
+desktop's greeting, MPRIS / volume / command requests, battery, and desktop → phone ping, share
+and typing.
+
+| Glide-only feature | State |
+|---|---|
+| Wake-on-LAN (`glide.wol`, wake an offline paired computer) | implemented; magic packet unit-tested |
+| Send new screenshots to the computer | implemented (off by default) |
+| Computer battery low / charged alerts | implemented; unit-tested |
+| Explain refused KDE Connect computers in Devices | implemented |
+
+## CI
+
+`.github/workflows/release.yml`: tests, lint and a signed release APK on every push to `main`,
+`fix/**`, `feat/**` and pull requests (workflow artifact); a `vX.Y.Z` tag also attaches the APK
+to that GitHub release (suffix tags → pre-release). Signing: see `ci/README.md`.

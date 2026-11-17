@@ -115,9 +115,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private val io = Executors.newCachedThreadPool()
     private val sender = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, ArrayBlockingQueue(128))
     /** Incoming payloads are fetched strictly one at a time, off the packet-sending thread. */
-    private val downloads = Executors.newSingleThreadExecutor()
+    // Bounded queues: a computer announcing endless payloads can't pile up work (each task
+    // holds its packet). Beyond the bound new work is dropped.
+    private val downloads = java.util.concurrent.ThreadPoolExecutor(1, 1, 0, java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.LinkedBlockingQueue(512), java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
     /** Small incoming payloads (notification icons, album art) so a big file can't stall them. */
-    private val smallDownloads = Executors.newFixedThreadPool(2)
+    private val smallDownloads = java.util.concurrent.ThreadPoolExecutor(2, 2, 0, java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.LinkedBlockingQueue(64), java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())
     private val generation = AtomicLong()
     private val closed = AtomicBoolean(false)
 
@@ -1120,13 +1124,18 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     private fun handleMpris(peerId: String, body: JSONObject) {
         body.optJSONArray("playerList")?.let { array ->
-            val players = buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotEmpty() }?.let(::add) }
-            mediaStates.entries.filter { (key, _) -> key.startsWith("$peerId/") && key.removePrefix("$peerId/") !in players }
-                .forEach { (key, state) ->
-                    mediaStates.remove(key)
-                    // A playing player went away (e.g. its browser tab closed).
-                    if (state.isPlaying) ContinueWatching.maybeShow(app, state) { true }
+            val players = buildList {
+                for (i in 0 until array.length()) {
+                    if (size >= MAX_PLAYERS) break
+                    array.optString(i).takeIf { it.isNotEmpty() && it.length <= 200 && it !in this }?.let(::add)
                 }
+            }
+            val gone = mediaStates.entries.filter { (key, _) -> key.startsWith("$peerId/") && key.removePrefix("$peerId/") !in players }
+            gone.forEach { (key, _) -> mediaStates.remove(key) }
+            // A playing player went away (e.g. its browser tab closed): offer the one that
+            // played last.
+            gone.map { it.value }.filter { it.isPlaying }.maxByOrNull { it.playStartTime }
+                ?.let { state -> ContinueWatching.maybeShow(app, state) { true } }
             emit(Event.MediaPlayers(peerId, players))
             players.forEach { player ->
                 sendPacketTo(peerId, ProtocolPackets.mprisRequest(
@@ -1142,6 +1151,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             return
         }
         val key = "$peerId/$player"
+        if (!mediaStates.containsKey(key) && mediaStates.keys.count { it.startsWith("$peerId/") } >= MAX_PLAYERS) return
         val old = mediaStates[key] ?: MediaState(player)
         val artUrl = body.optString("albumArtUrl", old.albumArtUrl).takeIf { url ->
             url.isEmpty() || runCatching { android.net.Uri.parse(url).scheme in ART_SCHEMES }.getOrDefault(false)
@@ -1179,6 +1189,18 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     private val artSupport = ConcurrentHashMap<String, Boolean>()
 
+    /** The whole stream if it has at most [limit] bytes, else null (without reading more). */
+    private fun readAtMost(input: java.io.InputStream, limit: Long): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) return out.toByteArray()
+            if (out.size() + read > limit) return null
+            out.write(buffer, 0, read)
+        }
+    }
+
     /** AlbumArtCache: http(s) art is downloaded directly, local art is asked for as a payload. */
     private fun fetchAlbumArt(peerId: String, player: String, url: String) {
         val scheme = runCatching { android.net.Uri.parse(url).scheme }.getOrNull()
@@ -1190,7 +1212,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                             connectTimeout = 10_000; readTimeout = 10_000
                             try {
                                 if (responseCode !in 200..299 || contentLengthLong > MAX_ART_BYTES) null
-                                else inputStream.use { it.readBytes() }.takeIf { it.size <= MAX_ART_BYTES }
+                                else inputStream.use { readAtMost(it, MAX_ART_BYTES) }
                             } finally { disconnect() }
                         }
                     }.getOrNull()
@@ -1631,6 +1653,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
         const val MAX_DIALS = 8
+        const val MAX_PLAYERS = 32
         const val MAX_REFUSED = 32
         const val RATE_LIMIT_MS = 1_000L
         const val ICON_ACCEPT_TIMEOUT_MS = 10_000

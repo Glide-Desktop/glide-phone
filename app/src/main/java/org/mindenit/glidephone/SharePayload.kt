@@ -102,6 +102,8 @@ internal object SharePayload {
     ): Received? {
         val safeName = filename.substringAfterLast('/').substringAfterLast('\\')
             .filterNot { it.isISOControl() }.trim().take(120).ifBlank { "glide-file" }
+        // A file must say how big it is and fit, with room to spare: no endless download.
+        if (size < 0 || size > freeBytes() - FREE_MARGIN_BYTES) return null
         var secure: SSLSocket? = null
         var target: Pair<Uri?, java.io.OutputStream>? = null
         var complete = false
@@ -121,8 +123,8 @@ internal object SharePayload {
             opened.second.use { out ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
-                while (size < 0 || total < size) {
-                    val want = if (size < 0) buffer.size else minOf(buffer.size.toLong(), size - total).toInt()
+                while (total < size) {
+                    val want = minOf(buffer.size.toLong(), size - total).toInt()
                     val read = input.read(buffer, 0, want)
                     if (read < 0) break
                     out.write(buffer, 0, read)
@@ -130,7 +132,7 @@ internal object SharePayload {
                     onProgress(total)
                 }
                 out.flush()
-                if (size >= 0 && total < size) return null
+                if (total < size) return null
             }
             complete = true
             Received(safeName, opened.first)
@@ -142,6 +144,13 @@ internal object SharePayload {
             if (!complete) target?.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
         }
     }
+
+    private const val FREE_MARGIN_BYTES = 64L * 1024 * 1024
+
+    @Suppress("DEPRECATION")
+    private fun freeBytes(): Long = runCatching {
+        android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path).availableBytes
+    }.getOrDefault(Long.MAX_VALUE)
 
     /** Fetch a small payload (album art, icons) into memory; null on failure or if too large. */
     fun receiveBytes(

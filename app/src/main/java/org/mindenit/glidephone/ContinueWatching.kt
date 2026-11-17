@@ -69,10 +69,11 @@ internal object ContinueWatching {
         if (state.playStartTime + 5000 > android.os.SystemClock.elapsedRealtime()) return // played too briefly
         val url = state.url.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return
         val app = context.applicationContext
-        Thread {
-            Thread.sleep(500)
-            if (!stillPaused()) return@Thread // just the gap between songs
-            if (!SetupPreferences(app).mprisKeepWatching || !RemoteNotifications.hasPermission(app)) return@Thread
+        // One delayed check on the main thread (not a thread per player), and one offer shown.
+        handler.removeCallbacksAndMessages(TOKEN)
+        handler.postAtTime(check@{
+            if (!stillPaused()) return@check // just the gap between songs
+            if (!SetupPreferences(app).mprisKeepWatching || !RemoteNotifications.hasPermission(app)) return@check
             val target = VideoUrls.withSeek(VideoUrls.fromTvLink(url), state.currentPosition())
             ensureChannel(app)
             val intent = PendingIntent.getActivity(app, 0x6377, Intent(Intent.ACTION_VIEW, Uri.parse(target))
@@ -87,10 +88,14 @@ internal object ContinueWatching {
                 .build()
             runCatching {
                 app.getSystemService(NotificationManager::class.java)
-                    ?.notify(android.os.SystemClock.elapsedRealtime().toInt(), notification)
+                    ?.notify(NOTIFICATION_ID, notification)
             }
-        }.apply { isDaemon = true }.start()
+        }, TOKEN, android.os.SystemClock.uptimeMillis() + 500)
     }
+
+    private val handler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    private val TOKEN = Any()
+    private const val NOTIFICATION_ID = 0x6378
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < 26) return

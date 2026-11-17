@@ -24,6 +24,9 @@ import org.apache.sshd.sftp.server.SftpSubsystemProxy
 import java.io.File
 import java.io.IOException
 import java.nio.channels.Channel
+import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
+import java.nio.file.AccessDeniedException
 import java.nio.file.AccessMode
 import java.nio.file.CopyOption
 import java.nio.file.DirectoryStream
@@ -33,6 +36,7 @@ import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileAttribute
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -132,8 +136,9 @@ internal class SftpServer(private val context: Context, private val deviceKey: P
     }
 
     /**
-     * Rooted at "/", but "/" and "/storage" are not listable on Android: show the storage
-     * volumes there instead (NativeStorageFileSystemFactory).
+     * Rooted at "/", but only the storage volumes are served: "/" and "/storage" list just the
+     * way down to them, and anything else (the app's own data, /data, /proc, ...) is refused,
+     * so a paired computer can't read the host key or edit the trusted devices.
      */
     private class NativeStorageFileSystemFactory(private val dirs: () -> List<Path>) : FileSystemFactory {
         override fun getUserHomeDir(session: SessionContext?): Path? = null
@@ -147,7 +152,50 @@ internal class SftpServer(private val context: Context, private val deviceKey: P
             }
             private fun firstUnder(path: Path): Path? = under(path).firstOrNull()?.let { path.fileSystem.getPath(it.toString()) }
 
+            private fun native(path: Path): Path = java.nio.file.Paths.get(path.toAbsolutePath().normalize().toString())
+            /** Inside a storage volume. */
+            private fun inside(path: Path): Boolean = native(path).let { n -> dirs().any { n.startsWith(it) } }
+            /** Inside a volume, or a folder on the way to one ("/", "/storage"). */
+            private fun visible(path: Path): Boolean = inside(path) || under(path).isNotEmpty()
+            private fun requireInside(path: Path) {
+                if (!inside(path)) throw AccessDeniedException(path.toString())
+            }
+            private fun requireVisible(path: Path) {
+                if (!visible(path)) throw AccessDeniedException(path.toString())
+            }
+
+            override fun newByteChannel(path: Path, options: MutableSet<out OpenOption>, vararg attrs: FileAttribute<*>): SeekableByteChannel {
+                requireInside(path); return super.newByteChannel(path, options, *attrs)
+            }
+            override fun newFileChannel(path: Path, options: MutableSet<out OpenOption>, vararg attrs: FileAttribute<*>): FileChannel {
+                requireInside(path); return super.newFileChannel(path, options, *attrs)
+            }
+            override fun createDirectory(dir: Path, vararg attrs: FileAttribute<*>) {
+                requireInside(dir); super.createDirectory(dir, *attrs)
+            }
+            override fun delete(path: Path) {
+                requireInside(path); super.delete(path)
+            }
+            override fun copy(source: Path, target: Path, vararg options: CopyOption) {
+                requireInside(source); requireInside(target); super.copy(source, target, *options)
+            }
+            override fun move(source: Path, target: Path, vararg options: CopyOption) {
+                requireInside(source); requireInside(target); super.move(source, target, *options)
+            }
+            // Links could point out of the volumes.
+            override fun createSymbolicLink(link: Path, target: Path, vararg attrs: FileAttribute<*>) =
+                throw AccessDeniedException(link.toString())
+            override fun createLink(link: Path, existing: Path) = throw AccessDeniedException(link.toString())
+            override fun readSymbolicLink(link: Path): Path {
+                requireInside(link); return super.readSymbolicLink(link)
+            }
+            override fun setAttribute(path: Path, attribute: String, value: Any?, vararg options: LinkOption) {
+                requireInside(path); super.setAttribute(path, attribute, value, *options)
+            }
+
             override fun checkAccess(path: Path, vararg modes: AccessMode) {
+                requireVisible(path)
+                if (AccessMode.WRITE in modes) requireInside(path)
                 try {
                     super.checkAccess(path, *modes)
                 } catch (e: IOException) {
@@ -156,18 +204,22 @@ internal class SftpServer(private val context: Context, private val deviceKey: P
             }
 
             override fun <A : BasicFileAttributes> readAttributes(path: Path, type: Class<A>, vararg options: LinkOption): A = try {
+                requireVisible(path)
                 super.readAttributes(path, type, *options)
             } catch (e: IOException) {
                 super.readAttributes(firstUnder(path) ?: throw e, type, *options)
             }
 
             override fun readAttributes(path: Path, attributes: String, vararg options: LinkOption): Map<String, Any> = try {
+                requireVisible(path)
                 super.readAttributes(path, attributes, *options)
             } catch (e: IOException) {
                 super.readAttributes(firstUnder(path) ?: throw e, attributes, *options)
             }
 
             override fun newDirectoryStream(dir: Path, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> = try {
+                // Above the volumes, list only the way down to them (never /data or the like).
+                if (!inside(dir)) throw AccessDeniedException(dir.toString())
                 super.newDirectoryStream(dir, filter)
             } catch (e: IOException) {
                 val depth = dir.toAbsolutePath().normalize().nameCount

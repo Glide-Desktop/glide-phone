@@ -221,6 +221,22 @@ class ProtocolLoopbackTest {
                 org.apache.sshd.sftp.client.SftpClientFactory.instance().createSftpClient(session).use { sftp ->
                     val names = sftp.readDir(root.path).map { it.filename }
                     assertTrue(names.contains("hello.txt"))
+                    assertEquals("hi", sftp.read(File(root, "hello.txt").path).use { it.readBytes().decodeToString() })
+                    // Nothing outside the volumes: not the app's own data, not /data.
+                    val secret = File(context.noBackupFilesDir, "sftp-test-secret").apply { writeText("pin") }
+                    try {
+                        assertFalse(runCatching { sftp.read(secret.path).use { it.readBytes() } }.isSuccess)
+                        assertFalse(runCatching { sftp.write(File(context.filesDir, "planted").path).use { it.write(1) } }.isSuccess)
+                        assertFalse(File(context.filesDir, "planted").exists())
+                        // Above the volume (here the test root lives in filesDir) only the way down shows.
+                        val above = sftp.readDir(context.dataDir.path).map { it.filename }.filter { it != "." && it != ".." }
+                        assertEquals(listOf("files"), above)
+                        assertFalse(runCatching { sftp.read(File(root, "../../no_backup/sftp-test-secret").path).use { it.readBytes() } }.isSuccess)
+                        val top = sftp.readDir("/").map { it.filename }.filter { it != "." && it != ".." }
+                        assertEquals("only the way down to the volume", listOf("data"), top)
+                    } finally {
+                        secret.delete()
+                    }
                 }
             }
             // Key login with the device's pairing key.

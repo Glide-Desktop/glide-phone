@@ -41,10 +41,11 @@ internal object SharePayload {
         peerCertificate: X509Certificate,
         source: java.io.InputStream,
         size: Long,
+        acceptTimeoutMs: Int = ACCEPT_TIMEOUT_MS,
         onProgress: (Long) -> Unit = {}
     ): Handle {
         val server = openPayloadServer()
-        server.soTimeout = ACCEPT_TIMEOUT_MS
+        server.soTimeout = acceptTimeoutMs
         lateinit var handle: Handle
         Thread({
             var ok = false

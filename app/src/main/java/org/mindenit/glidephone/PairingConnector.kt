@@ -596,6 +596,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             if (connections.remove(id, connection)) {
                 mediaStates.keys.removeAll { it.startsWith("$id/") }
                 volumeSinks.remove(id)
+                iconsSent.remove(id)
                 if (target == id) target = connections.keys.firstOrNull()
                 if (connections.isEmpty()) NotificationBridge.detach(this)
                 emit(Event.Disconnected(id))
@@ -1009,8 +1010,44 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     fun sendShareText(text: String): Boolean = sendPacket(ProtocolPackets.shareText(text))
     fun sendShareUrl(url: String): Boolean = sendPacket(ProtocolPackets.shareUrl(url))
 
-    fun sendNotificationPacket(packet: String): Boolean =
-        FeatureId.NOTIFICATIONS.key in SetupPreferences(app).selectedFeatures() && broadcastPacket(packet)
+    /** Per device: notification key -> hash of the icon that device already has. */
+    private val iconsSent = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+
+    /**
+     * Forward a phone notification. With an icon, every packet names it in payloadHash and
+     * the PNG itself is attached only when that device does not have it yet (as
+     * NotificationsPlugin does per device).
+     */
+    fun sendNotificationPacket(packet: String, key: String? = null, icon: ByteArray? = null, iconHash: String? = null): Boolean {
+        if (FeatureId.NOTIFICATIONS.key !in SetupPreferences(app).selectedFeatures()) return false
+        if (key == null || icon == null || iconHash == null) return broadcastPacket(packet)
+        var any = false
+        connections.forEach { (id, connection) ->
+            if (ProtocolPackets.TYPE_NOTIFICATION !in connection.pending.peer.incomingCapabilities) return@forEach
+            val sent = iconsSent.getOrPut(id) { ConcurrentHashMap() }
+            val json = runCatching { JSONObject(packet) }.getOrNull() ?: return@forEach
+            json.getJSONObject("body").put("payloadHash", iconHash)
+            if (sent[key] == iconHash) {
+                if (sendPacketTo(id, json.toString() + "\n")) any = true
+                return@forEach
+            }
+            any = true
+            try {
+                io.execute {
+                    val withPayload = runCatching {
+                        val identity = LocalIdentity().loadOrCreate()
+                        val handle = SharePayload.serve(identity, connection.pending.certificate,
+                            java.io.ByteArrayInputStream(icon), icon.size.toLong(), acceptTimeoutMs = ICON_ACCEPT_TIMEOUT_MS)
+                        json.put("payloadSize", icon.size.toLong())
+                            .put("payloadTransferInfo", JSONObject().put("port", handle.port))
+                    }.isSuccess
+                    if (sendPacketTo(id, json.toString() + "\n") && withPayload) sent[key] = iconHash
+                }
+            } catch (_: RejectedExecutionException) {
+            }
+        }
+        return any
+    }
 
     fun sendPing(message: String? = null): Boolean = sendPacket(
         if (message == null) JSONObject().put("id", System.currentTimeMillis())
@@ -1133,6 +1170,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
         const val RATE_LIMIT_MS = 1_000L
+        const val ICON_ACCEPT_TIMEOUT_MS = 10_000
         const val MAX_UNPAIRED_CONNECTIONS = 42
         const val PAYLOAD_TIMEOUT_MS = 60L * 60 * 1000
     }

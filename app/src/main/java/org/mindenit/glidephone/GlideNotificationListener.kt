@@ -38,8 +38,8 @@ internal object NotificationBridge {
         Handler(Looper.getMainLooper()).post { listener?.sendActiveNotifications() }
     }
 
-    fun send(packet: String) {
-        connector?.sendNotificationPacket(packet)
+    fun send(packet: String, key: String? = null, icon: ByteArray? = null, iconHash: String? = null) {
+        connector?.sendNotificationPacket(packet, key, icon, iconHash)
     }
 
     /** Handle an incoming notification.action / notification.reply / notification.request packet. */
@@ -145,18 +145,62 @@ class GlideNotificationListener : NotificationListenerService() {
             .mapNotNull { it.title?.toString() }
         val hasReply = notification.actions.orEmpty().any { !it.remoteInputs.isNullOrEmpty() }
 
-        NotificationBridge.send(
-            ProtocolPackets.notification(
-                id = sbn.key,
-                appName = appName,
-                title = title,
-                text = body,
-                silent = forceSilent || (isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0),
-                actions = actionTitles,
-                requestReplyId = if (hasReply) sbn.key else null,
-                isClearable = sbn.isClearable,
-                time = sbn.postTime
-            )
-        )
+        val packet = org.json.JSONObject(ProtocolPackets.notification(
+            id = sbn.key,
+            appName = appName,
+            title = title,
+            text = body,
+            silent = forceSilent || (isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0),
+            actions = actionTitles,
+            requestReplyId = if (hasReply) sbn.key else null,
+            isClearable = sbn.isClearable,
+            time = sbn.postTime
+        ))
+        addConversation(notification, packet.getJSONObject("body"))
+        val icon = runCatching { extractIcon(sbn) }.getOrNull()
+        NotificationBridge.send(packet.toString() + "\n", sbn.key, icon?.first, icon?.second)
+    }
+
+    /** Messaging-style notifications: send the conversation, and group chats as KDE Connect does. */
+    private fun addConversation(notification: Notification, body: org.json.JSONObject) {
+        val style = androidx.core.app.NotificationCompat.MessagingStyle
+            .extractMessagingStyleFromNotification(notification) ?: return
+        val messages = style.messages
+        if (messages.isEmpty()) return
+        val conversation = org.json.JSONArray()
+        messages.forEach { message ->
+            conversation.put(org.json.JSONObject()
+                .put("sender", message.person?.name?.toString() ?: "Невідомий відправник")
+                .put("content", message.text?.toString().orEmpty()))
+        }
+        body.put("conversation", conversation)
+        val group = style.conversationTitle
+        if (style.isGroupConversation && group != null) {
+            val last = conversation.getJSONObject(conversation.length() - 1)
+            body.put("groupName", group.toString())
+            body.put("title", group.toString())
+            body.put("text", last.getString("sender") + ": " + last.getString("content"))
+        }
+    }
+
+    /** PNG icon (large icon, else small icon) and its MD5, as NotificationsPlugin.extractIcon. */
+    private fun extractIcon(sbn: StatusBarNotification): Pair<ByteArray, String>? {
+        val notification = sbn.notification
+        val foreign = createPackageContext(sbn.packageName, 0)
+        val drawable = (notification.getLargeIcon() ?: notification.smallIcon)?.loadDrawable(foreign) ?: return null
+        val size = if (drawable.intrinsicWidth in 65..128 && drawable.intrinsicHeight in 65..128)
+            drawable.intrinsicWidth to drawable.intrinsicHeight else 96 to 96
+        val bitmap = android.graphics.Bitmap.createBitmap(size.first, size.second, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, size.first, size.second)
+        drawable.draw(canvas)
+        val bytes = java.io.ByteArrayOutputStream().use { out ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, out)
+            out.toByteArray()
+        }
+        bitmap.recycle()
+        val hash = java.security.MessageDigest.getInstance("MD5").digest(bytes)
+            .joinToString("") { "%02X".format(it.toInt() and 0xff) }
+        return bytes to hash
     }
 }

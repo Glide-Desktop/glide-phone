@@ -165,8 +165,20 @@ internal object GlideHub {
                     if (event.success) "${event.fileName} збережено в «Завантаження»" else event.fileName
                 )
             }
-            is PairingConnector.Event.PeerBattery ->
+            is PairingConnector.Event.PeerBattery -> {
+                val before = peerBatteries[event.id]
                 peerBatteries = peerBatteries + (event.id to Pair(event.charge, event.charging))
+                // Glide-only: say when the computer runs low or has finished charging.
+                val name = connectedDevices.firstOrNull { it.id == event.id }?.name ?: "Комп’ютер"
+                when (ComputerBattery.change(before, event.charge, event.charging)) {
+                    ComputerBattery.Change.LOW -> RemoteNotifications.post(context, "battery-${event.id}", "Glide Phone",
+                        "$name: низький заряд", "Залишилося ${event.charge}%. Під’єднайте зарядний пристрій.")
+                    ComputerBattery.Change.FULL -> RemoteNotifications.post(context, "battery-${event.id}", "Glide Phone",
+                        "$name повністю заряджено", "Можна від’єднати зарядний пристрій.")
+                    ComputerBattery.Change.CHARGING -> RemoteNotifications.cancel(context, "battery-${event.id}")
+                    null -> Unit
+                }
+            }
             is PairingConnector.Event.PingReceived ->
                 Toast.makeText(context, "Пінг від «${event.name}»: ${event.message}", Toast.LENGTH_SHORT).show()
             is PairingConnector.Event.CommandList -> {

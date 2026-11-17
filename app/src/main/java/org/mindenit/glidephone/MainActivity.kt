@@ -782,7 +782,20 @@ private fun DeviceDiscoverySection(
         SectionLabel("Сполучені, недоступні")
         Spacer(Modifier.height(8.dp))
         offlinePaired.forEach { device ->
-            OfflinePairedRow(device.name) { connector.forget(device.id); forgotten++ }
+            OfflinePairedRow(
+                device.name,
+                onWake = if (device.macs.isNotEmpty()) ({
+                    val context2 = context
+                    Thread {
+                        val ok = connector.wake(device.id)
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(context2,
+                                if (ok) "Сигнал увімкнення надіслано" else "Не вдалося надіслати сигнал",
+                                android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }.start()
+                }) else null
+            ) { connector.forget(device.id); forgotten++ }
             Spacer(Modifier.height(10.dp))
         }
         Spacer(Modifier.height(6.dp))
@@ -830,7 +843,7 @@ private fun DeviceDiscoverySection(
 }
 
 @Composable
-private fun OfflinePairedRow(name: String, onForget: () -> Unit) {
+private fun OfflinePairedRow(name: String, onWake: (() -> Unit)? = null, onForget: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -845,6 +858,7 @@ private fun OfflinePairedRow(name: String, onForget: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text("Не в мережі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (onWake != null) TextButton(onClick = onWake) { Text("Увімкнути") }
         TextButton(onClick = onForget) { Text("Забути") }
     }
 }

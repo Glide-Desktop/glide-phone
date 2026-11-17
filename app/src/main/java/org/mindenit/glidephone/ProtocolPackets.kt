@@ -12,6 +12,11 @@ internal object ProtocolPackets {
     const val TYPE_NOTIFICATION_REQUEST = "kdeconnect.notification.request"
     const val TYPE_FINDMYPHONE_REQUEST = "kdeconnect.findmyphone.request"
     const val TYPE_PING = "kdeconnect.ping"
+
+    // ---- Glide-only extensions (other KDE Connect apps ignore them) ----
+
+    /** The desktop's network card addresses, for Wake-on-LAN. */
+    const val TYPE_GLIDE_WOL = "glide.wol"
     const val TYPE_CLIPBOARD = "kdeconnect.clipboard"
     const val TYPE_CLIPBOARD_CONNECT = "kdeconnect.clipboard.connect"
     const val TYPE_PRESENTER = "kdeconnect.presenter"

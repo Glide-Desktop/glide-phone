@@ -627,6 +627,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         }
     }
 
+    /** Wakes a sleeping paired computer that told us its network cards (glide.wol). */
+    fun wake(id: String): Boolean {
+        val paired = pairedDevices().firstOrNull { it.id == id } ?: return false
+        return WakeOnLan.wake(app, paired.macs, paired.lastAddress)
+    }
+
     /** ShareActivity.storeUrlForFutureDelivery: links for an offline device go out when it connects. */
     fun queueUrls(deviceId: String, urls: Collection<String>) {
         val prefs = app.getSharedPreferences(QUEUED_URLS, Context.MODE_PRIVATE)
@@ -877,6 +883,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
+            ProtocolPackets.TYPE_GLIDE_WOL -> {
+                val list = body.optJSONArray("macs")
+                val macs = (0 until (list?.length() ?: 0)).mapNotNull { list?.optString(it)?.takeIf(String::isNotBlank) }.take(8)
+                val address = connections[peerId]?.pending?.socket?.inetAddress?.hostAddress
+                runCatching { TrustedPeerStore(app).recordWake(peerId, macs, address) }
+            }
             ProtocolPackets.TYPE_MOUSEPAD_KEYBOARDSTATE -> emit(Event.KeyboardState(peerId, body.optBoolean("state", true)))
             ProtocolPackets.TYPE_MOUSEPAD_REQUEST -> {
                 val release: (Int, Int) -> Unit = { dx, dy ->

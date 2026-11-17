@@ -106,7 +106,8 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_SMS_REQUEST,
         ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS,
         ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION,
-        ProtocolPackets.TYPE_PING
+        ProtocolPackets.TYPE_PING,
+        ProtocolPackets.TYPE_GLIDE_WOL
     )
 
     /** Packet types this phone may send. */

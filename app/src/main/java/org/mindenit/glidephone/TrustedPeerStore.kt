@@ -68,7 +68,17 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
         write(records)
     }
 
-    data class Paired(val id: String, val name: String, val type: String)
+    data class Paired(val id: String, val name: String, val type: String, val macs: List<String> = emptyList(),
+                      val lastAddress: String? = null)
+
+    /** Wake-on-LAN data a Glide desktop sent (glide.wol) and where it was last seen. */
+    fun recordWake(peerId: String, macs: List<String>, address: String?) = synchronized(lock) {
+        val records = read()
+        val record = records.optJSONObject(peerId) ?: return@synchronized
+        record.put("macs", org.json.JSONArray(macs))
+        address?.let { record.put("lastAddress", it) }
+        write(records)
+    }
 
     /** Every device paired with [localId], with the last name it announced. */
     fun paired(localId: String): List<Paired> = synchronized(lock) {
@@ -76,7 +86,9 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
         records.keys().asSequence().mapNotNull { id ->
             val record = records.optJSONObject(id) ?: return@mapNotNull null
             if (record.optString("localId") != localId) return@mapNotNull null
-            Paired(id, record.optString("name").ifEmpty { id }, record.optString("type").ifEmpty { "desktop" })
+            val macs = record.optJSONArray("macs")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+            Paired(id, record.optString("name").ifEmpty { id }, record.optString("type").ifEmpty { "desktop" },
+                macs, record.optString("lastAddress").ifEmpty { null })
         }.sortedBy { it.name.lowercase() }.toList()
     }
 

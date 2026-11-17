@@ -55,7 +55,9 @@ internal enum class DevicePlugin(
     SYSTEM_VOLUME("Гучність комп’ютера", "Регулювання аудіовиходів комп’ютера",
         setOf(P.TYPE_SYSTEMVOLUME), setOf(P.TYPE_SYSTEMVOLUME_REQUEST)),
     TELEPHONY("Телефонія", "Сповіщення комп’ютера про дзвінки",
-        setOf(P.TYPE_TELEPHONY_REQUEST_MUTE), setOf(P.TYPE_TELEPHONY));
+        setOf(P.TYPE_TELEPHONY_REQUEST_MUTE), setOf(P.TYPE_TELEPHONY)),
+    WAKE_ON_LAN("Увімкнення комп’ютера", "Будити сплячий комп’ютер з телефона (лише Glide)",
+        setOf(P.TYPE_GLIDE_WOL), emptySet());
 
     fun isEnabledByDefault(context: Context) = enabledByDefault(context)
 

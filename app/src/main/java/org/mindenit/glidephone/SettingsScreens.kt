@@ -428,3 +428,41 @@ private fun seekLabel(micros: Long): String {
     val seconds = micros / 1_000_000
     return if (seconds >= 60) "${seconds / 60} хв" else "$seconds с"
 }
+
+/** ShareSettingsFragment: where received files go and whether finishing alerts. */
+@Composable
+internal fun ShareSettingsSection() {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var destination by remember { mutableStateOf(prefs.shareDestination) }
+    var alert by remember { mutableStateOf(prefs.shareAlert) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            prefs.shareDestination = uri.toString()
+            destination = uri.toString()
+        }
+    }
+    val label = destination?.let { android.net.Uri.parse(it) }?.let { uri ->
+        runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri).substringAfter(':').ifEmpty { "/" } }.getOrNull()
+    }
+    SwitchRow("Власна папка для файлів", label?.let { "Папка: $it" } ?: "Файли зберігаються в «Завантаження»", destination != null) { on ->
+        if (on) picker.launch(null) else {
+            destination?.let { old ->
+                runCatching {
+                    context.contentResolver.releasePersistableUriPermission(android.net.Uri.parse(old),
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+            }
+            prefs.shareDestination = null
+            destination = null
+        }
+    }
+    if (destination != null) TextButton(onClick = { picker.launch(null) }) { Text("Змінити папку") }
+    SwitchRow("Звук після передавання", "Сповіщати звуком і вібрацією, коли файл отримано чи надіслано", alert) {
+        prefs.shareAlert = it; alert = it
+    }
+}

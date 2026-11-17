@@ -94,6 +94,8 @@ internal object SharePayload {
         port: Int,
         size: Long,
         filename: String,
+        /** Files to open right away go to Downloads, like CompositeReceiveFileJob. */
+        open: Boolean = false,
         onProgress: (Long) -> Unit = {}
     ): Received? {
         val safeName = filename.substringAfterLast('/').substringAfterLast('\\')
@@ -110,7 +112,7 @@ internal object SharePayload {
                 startHandshake()
             }
             val input = secure.inputStream
-            val target = openDownload(context, safeName) ?: return null
+            val target = (if (open) null else openInCustomFolder(context, safeName)) ?: openDownload(context, safeName) ?: return null
             target.second.use { out ->
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
@@ -172,6 +174,21 @@ internal object SharePayload {
         } finally {
             runCatching { secure?.close() }
         }
+    }
+
+    /** ShareSettingsFragment.getDestinationDirectory: the chosen folder while still writable. */
+    private fun openInCustomFolder(context: android.content.Context, name: String): Pair<Uri?, java.io.OutputStream>? {
+        val tree = SetupPreferences(context).shareDestination?.let(Uri::parse) ?: return null
+        return runCatching {
+            val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
+            val mime = android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+            // The provider picks a free name ("file (1).txt") when one exists.
+            val uri = android.provider.DocumentsContract.createDocument(context.contentResolver, parent, mime, name) ?: return null
+            val out = context.contentResolver.openOutputStream(uri) ?: return null
+            uri to out
+        }.getOrNull() // revoked or gone: fall back to Downloads
     }
 
     private fun openDownload(context: android.content.Context, name: String): Pair<Uri?, java.io.OutputStream>? {

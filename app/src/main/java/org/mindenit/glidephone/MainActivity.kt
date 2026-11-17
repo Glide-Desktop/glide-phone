@@ -1480,6 +1480,10 @@ private fun ColumnScope.FilesDetail(
     }
     Spacer(Modifier.height(20.dp))
     FeatureToggleRow(feature.icon, feature.title, feature.description, feature.id in selectedFeatures) { onFeatureChange(feature.id, it) }
+    Spacer(Modifier.height(20.dp))
+    SectionLabel("Отримані файли")
+    Spacer(Modifier.height(8.dp))
+    ShareSettingsSection()
 }
 
 @Composable

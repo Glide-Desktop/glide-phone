@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Progress / result notifications for file transfers, like KDE Connect's Upload/ReceiveNotification. */
 internal object TransferNotifications {
     private const val CHANNEL_ID = "glide_transfers"
+    /** Finished/failed transfers alert (FILETRANSFER_COMPLETE / _ERROR are IMPORTANCE_HIGH). */
+    private const val DONE_CHANNEL_ID = "glide_transfers_done"
     private val ids = AtomicInteger(5000)
 
     fun newId(): Int = ids.incrementAndGet()
@@ -23,6 +25,11 @@ internal object TransferNotifications {
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Передавання файлів", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        if (manager.getNotificationChannel(DONE_CHANNEL_ID) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(DONE_CHANNEL_ID, "Завершені передавання", NotificationManager.IMPORTANCE_HIGH)
             )
         }
     }
@@ -58,10 +65,18 @@ internal object TransferNotifications {
             outgoing -> if (count == 1) "Файл надіслано на «$device»" else "Надіслано $count файлів на «$device»"
             else -> if (count == 1) "Файл отримано з «$device»" else "Отримано $count файлів з «$device»"
         }
-        val builder = base(context, title)
-            .setSmallIcon(if (outgoing) android.R.drawable.stat_sys_upload_done else android.R.drawable.stat_sys_download_done)
+        val alert = SetupPreferences(context).shareAlert
+        val builder = NotificationCompat.Builder(context, DONE_CHANNEL_ID)
+            .setContentTitle(title)
+            .setShowWhen(false)
+            .setSmallIcon(if (failed > 0) android.R.drawable.stat_notify_error
+                else if (outgoing) android.R.drawable.stat_sys_upload_done else android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
-            .setContentText(if (!outgoing && failed == 0) "Збережено в «Завантаження»" else "")
+            .setSilent(!alert)
+            .setContentText(if (!outgoing && failed == 0) {
+                if (SetupPreferences(context).shareDestination != null) "Збережено у вибрану папку" else "Збережено в «Завантаження»"
+            } else "")
+        if (alert) builder.setDefaults(NotificationCompat.DEFAULT_ALL)
         if (open != null) {
             val view = Intent(Intent.ACTION_VIEW).setDataAndType(open, context.contentResolver.getType(open))
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

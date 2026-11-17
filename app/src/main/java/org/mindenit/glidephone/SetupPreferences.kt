@@ -89,7 +89,19 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getLong(KEY_MPRIS_SEEK, 10_000_000L)
         set(value) { preferences.edit().putLong(KEY_MPRIS_SEEK, value).apply() }
 
+    /** share_destination_folder_uri: SAF tree for received files, null = Downloads. */
+    var shareDestination: String?
+        get() = preferences.getString(KEY_SHARE_DESTINATION, null)
+        set(value) { preferences.edit().putString(KEY_SHARE_DESTINATION, value).apply() }
+
+    /** share_notification_preference: sound/vibrate when a transfer finishes. */
+    var shareAlert: Boolean
+        get() = preferences.getBoolean(KEY_SHARE_ALERT, true)
+        set(value) { preferences.edit().putBoolean(KEY_SHARE_ALERT, value).apply() }
+
     private companion object {
+        const val KEY_SHARE_DESTINATION = "share_destination_folder_uri"
+        const val KEY_SHARE_ALERT = "share_notification_preference"
         const val KEY_MPRIS_SEEK = "mpris_interval_time"
         const val KEY_PRESENTER_VOLUME = "presenter_volume_keys"
         const val KEY_PRESENTER_SENSITIVITY = "presenter_sensitivity"

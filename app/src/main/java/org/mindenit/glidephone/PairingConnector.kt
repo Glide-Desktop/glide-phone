@@ -892,7 +892,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     val saved = runCatching {
                         SharePayload.receive(
                             app, LocalIdentity().loadOrCreate(), connection.pending.certificate,
-                            connection.pending.socket.inetAddress, port, size, filename
+                            connection.pending.socket.inetAddress, port, size, filename, open
                         ) { got ->
                             val percent = if (size > 0) (got * 100 / size).toInt() else -1
                             TransferNotifications.progress(app, batch.notification, false, name, filename, index, batch.total, percent)

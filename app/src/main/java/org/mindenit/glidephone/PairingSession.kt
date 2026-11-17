@@ -72,7 +72,11 @@ internal class PairingSession(
                     when (current.status) {
                         PairingState.Status.CONFIRMED -> break
                         PairingState.Status.REJECTED, PairingState.Status.EXPIRED -> {
-                            runCatching { write(PairingPacket.response(false)) }
+                            // Tell the peer only about our own refusal or a timeout: echoing its
+                            // refusal back could cancel the new request it may already have sent.
+                            if (cancelledLocally || current.status == PairingState.Status.EXPIRED) {
+                                runCatching { write(PairingPacket.response(false)) }
+                            }
                             state = null
                             weInitiated = false
                             initiateRequested = false

@@ -1264,7 +1264,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private fun parseCommandList(body: JSONObject): List<RemoteCommand> {
         val obj = when (val raw = body.opt("commandList")) {
             is JSONObject -> raw
-            is String -> runCatching { JSONObject(raw) }.getOrNull()
+            is String -> raw.takeIf { JsonGuard.shallow(it) }?.let { runCatching { JSONObject(it) }.getOrNull() }
             else -> null
         } ?: return emptyList()
         val out = mutableListOf<RemoteCommand>()

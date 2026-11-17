@@ -48,7 +48,7 @@ internal object IdentityPacket {
     }
 
     fun decode(line: String): Peer? {
-        if (line.toByteArray(Charsets.UTF_8).size > MAX_BYTES) return null
+        if (line.toByteArray(Charsets.UTF_8).size > MAX_BYTES || !JsonGuard.shallow(line)) return null
         return try {
             val packet = JSONObject(line)
             if (packet.optString("type") != TYPE) return null

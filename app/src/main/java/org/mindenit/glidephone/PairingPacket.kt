@@ -14,7 +14,7 @@ internal object PairingPacket {
         encode(JSONObject().put("pair", accepted), packetId)
 
     fun parse(line: String): Message? {
-        if (line.toByteArray(Charsets.UTF_8).size > IdentityPacket.MAX_BYTES) return null
+        if (line.toByteArray(Charsets.UTF_8).size > IdentityPacket.MAX_BYTES || !JsonGuard.shallow(line)) return null
         return try {
             val packet = JSONObject(line)
             if (packet.optString("type") != TYPE) return null

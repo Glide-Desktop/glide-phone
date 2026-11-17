@@ -85,6 +85,8 @@ internal class TrustedConnection(
     }
 
     private fun handleIncomingLine(lineStr: String) {
+        // Too deeply nested to parse safely: drop it (see JsonGuard).
+        if (!JsonGuard.shallow(lineStr)) return
         try {
             val packet = JSONObject(lineStr)
             val type = packet.optString("type")

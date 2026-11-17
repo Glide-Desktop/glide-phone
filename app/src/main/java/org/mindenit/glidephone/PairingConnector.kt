@@ -612,6 +612,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     TrustedPeerStore(app).remove(id, identity.id, connection.pending.certificate)
                 }
                 runCatching { plugins.clear(id) }
+                runCatching { RunCommandStore.forget(app, id) }
                 runCatching { connection.pending.socket.close() }
             }
         } catch (_: RejectedExecutionException) {

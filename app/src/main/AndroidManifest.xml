@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -100,6 +101,41 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.GlidePhone.Translucent" />
+        <service
+            android:name=".RunCommandControlsService"
+            android:enabled="@bool/device_controls_supported"
+            android:exported="true"
+            tools:targetApi="30"
+            android:label="Glide Phone"
+            android:permission="android.permission.BIND_CONTROLS">
+            <intent-filter>
+                <action android:name="android.service.controls.ControlsProviderService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name=".RunCommandWidget"
+            android:exported="false"
+            android:label="Команди комп’ютера">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/runcommand_widget_info" />
+        </receiver>
+        <service
+            android:name=".RunCommandWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <activity
+            android:name=".RunCommandWidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.GlidePhone.Translucent">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <receiver
             android:name=".MediaNotificationReceiver"
             android:exported="false" />

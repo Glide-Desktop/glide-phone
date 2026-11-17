@@ -114,7 +114,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_MPRIS_KEEP_WATCHING, true)
         set(value) { preferences.edit().putBoolean(KEY_MPRIS_KEEP_WATCHING, value).apply() }
 
+    /** set_runcommand_name_as_title: controls/widget show the name, the command below. */
+    var runCommandNameAsTitle: Boolean
+        get() = preferences.getBoolean(KEY_RUNCOMMAND_NAME_TITLE, true)
+        set(value) { preferences.edit().putBoolean(KEY_RUNCOMMAND_NAME_TITLE, value).apply() }
+
     private companion object {
+        const val KEY_RUNCOMMAND_NAME_TITLE = "set_runcommand_name_as_title"
         const val KEY_MPRIS_KEEP_WATCHING = "mpris_keepwatching_enabled"
         const val KEY_DIGITIZER_HIDE = "digitizer_hide_draw_button"
         const val KEY_DIGITIZER_SIDE = "digitizer_draw_button_side"

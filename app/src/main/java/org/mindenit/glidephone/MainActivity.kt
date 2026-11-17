@@ -106,8 +106,11 @@ class MainActivity : ComponentActivity() {
         internal var keyInterceptor: ((android.view.KeyEvent) -> Boolean)? = null
     }
 
-    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
-        keyInterceptor?.invoke(event) == true || super.dispatchKeyEvent(event)
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean =
+        keyInterceptor?.invoke(event) == true || super.onKeyDown(keyCode, event)
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean =
+        keyInterceptor?.invoke(event) == true || super.onKeyUp(keyCode, event)
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)

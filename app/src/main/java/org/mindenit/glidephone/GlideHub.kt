@@ -169,6 +169,8 @@ internal object GlideHub {
                 Toast.makeText(context, "Пінг від «${event.name}»: ${event.message}", Toast.LENGTH_SHORT).show()
             is PairingConnector.Event.CommandList -> {
                 remoteCommands = remoteCommands + (event.id to event.commands)
+                val deviceName = connectedDevices.firstOrNull { it.id == event.id }?.name ?: event.id
+                RunCommandStore.save(context, event.id, deviceName, event.commands)
                 GlideService.refresh(context)
                 canAddCommand = if (event.canAddCommand) canAddCommand + event.id else canAddCommand - event.id
             }

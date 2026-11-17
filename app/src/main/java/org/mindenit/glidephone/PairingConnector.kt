@@ -1240,7 +1240,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun sendDigitizerEnd(): Boolean = sendPacket(ProtocolPackets.digitizerEnd())
 
-    fun sendDigitizerEvent(active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean = false): Boolean =
+    fun sendDigitizerEvent(active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean? = false): Boolean =
         sendPacket(ProtocolPackets.digitizerEvent(active, touching, x, y, pressure, rubber))
 
     fun sendRing(): Boolean = sendPacket(ProtocolPackets.findMyPhone())

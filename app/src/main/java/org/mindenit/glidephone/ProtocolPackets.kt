@@ -320,11 +320,12 @@ internal object ProtocolPackets {
         .put("body", JSONObject().put("action", "end"))
         .toString() + "\n"
 
-    fun digitizerEvent(active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean = false): String {
+    /** DigitizerPlugin.reportEvent: only the fields that are set; tool is "Pen" or "Rubber". */
+    fun digitizerEvent(active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean? = false): String {
         val body = JSONObject()
         active?.let { body.put("active", it) }
         touching?.let { body.put("touching", it) }
-        body.put("tool", if (rubber) "Rubber" else "Pen")
+        rubber?.let { body.put("tool", if (it) "Rubber" else "Pen") }
         x?.let { body.put("x", it) }
         y?.let { body.put("y", it) }
         pressure?.let { body.put("pressure", it) }

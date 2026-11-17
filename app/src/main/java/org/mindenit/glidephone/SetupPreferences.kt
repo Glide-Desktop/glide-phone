@@ -99,7 +99,19 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_SHARE_ALERT, true)
         set(value) { preferences.edit().putBoolean(KEY_SHARE_ALERT, value).apply() }
 
+    /** digitizer_preference_key_hide_draw_button */
+    var digitizerHideDrawButton: Boolean
+        get() = preferences.getBoolean(KEY_DIGITIZER_HIDE, false)
+        set(value) { preferences.edit().putBoolean(KEY_DIGITIZER_HIDE, value).apply() }
+
+    /** digitizer_preference_key_draw_button_side: top_left, top_right, bottom_left, bottom_right. */
+    var digitizerDrawButtonSide: String
+        get() = preferences.getString(KEY_DIGITIZER_SIDE, "bottom_left") ?: "bottom_left"
+        set(value) { preferences.edit().putString(KEY_DIGITIZER_SIDE, value).apply() }
+
     private companion object {
+        const val KEY_DIGITIZER_HIDE = "digitizer_hide_draw_button"
+        const val KEY_DIGITIZER_SIDE = "digitizer_draw_button_side"
         const val KEY_SHARE_DESTINATION = "share_destination_folder_uri"
         const val KEY_SHARE_ALERT = "share_notification_preference"
         const val KEY_MPRIS_SEEK = "mpris_interval_time"

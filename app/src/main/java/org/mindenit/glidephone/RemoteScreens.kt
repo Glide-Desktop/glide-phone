@@ -9,6 +9,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Draw
@@ -212,7 +216,16 @@ internal fun VolumeDetail(connector: PairingConnector?, deviceId: String?) {
 
 /** Use the phone as a drawing tablet for the computer (kdeconnect.digitizer). */
 @Composable
-internal fun DigitizerDetail(connector: PairingConnector?) {
+internal fun DigitizerDetail(connector: PairingConnector?) = DigitizerDetail(connector) { active, touching, x, y, pressure, rubber ->
+    connector?.sendDigitizerEvent(active, touching, x, y, pressure, rubber)
+}
+
+/** [report] receives DigitizerPlugin.reportEvent fields (null = not sent). */
+@Composable
+internal fun DigitizerDetail(
+    connector: PairingConnector?,
+    report: (active: Boolean?, touching: Boolean?, x: Int?, y: Int?, pressure: Double?, rubber: Boolean?) -> Unit
+) {
     val context = LocalContext.current
     var size by remember { mutableStateOf(IntSize.Zero) }
     val stroke = remember { mutableStateListOf<Offset>() }
@@ -236,33 +249,51 @@ internal fun DigitizerDetail(connector: PairingConnector?) {
         }
         onDispose { if (size != IntSize.Zero) connector?.sendDigitizerEnd() }
     }
+    val prefs = remember { SetupPreferences(context) }
+    var drawHeld by remember { mutableStateOf(false) }
+    var fingerDown by remember { mutableStateOf(false) }
+    val drawHeldNow by rememberUpdatedState(drawHeld)
     Box(
         Modifier
             .fillMaxWidth()
             .height(420.dp)
             .background(LocalGlideColors.current.tonal, RoundedCornerShape(24.dp))
             .onSizeChanged { size = it }
-            .pointerInput(connector) {
+            .pointerInput(report) {
+                // DrawingPadView: a stylus draws with its pressure (eraser end = Rubber) and
+                // reports hover; a finger only moves the cursor unless "draw" is held.
                 awaitPointerEventScope {
+                    var fingerDraws = false
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Main)
                         val change = event.changes.firstOrNull() ?: continue
                         val x = change.position.x.roundToInt().coerceIn(0, this.size.width)
                         val y = change.position.y.roundToInt().coerceIn(0, this.size.height)
-                        val pressure = change.pressure.toDouble().coerceIn(0.0, 1.0)
+                        val finger = change.type == PointerType.Touch || change.type == PointerType.Mouse
+                        val rubber = change.type == PointerType.Eraser
+                        fun pressure() = if (finger) (if (fingerDraws) 1.0 else 0.0) else change.pressure.toDouble().coerceIn(0.0, 1.0)
                         when {
                             change.pressed && !change.previousPressed -> {
+                                if (finger) { fingerDraws = drawHeldNow; fingerDown = true }
                                 stroke.clear()
                                 stroke.add(change.position)
-                                connector?.sendDigitizerEvent(active = true, touching = true, x = x, y = y, pressure = pressure)
+                                report(true, !finger, x, y, pressure(), rubber)
                             }
                             change.pressed -> {
-                                stroke.add(change.position)
-                                connector?.sendDigitizerEvent(active = null, touching = null, x = x, y = y, pressure = pressure)
+                                if (!finger || fingerDraws) stroke.add(change.position)
+                                report(null, null, x, y, pressure(), rubber)
                             }
                             change.previousPressed -> {
-                                connector?.sendDigitizerEvent(active = false, touching = false, x = null, y = null, pressure = null)
+                                // A stylus lifted is still hovering; a finger leaves.
+                                report(!finger, false, null, null, null, null)
+                                if (finger) { fingerDown = false; fingerDraws = false }
                             }
+                            event.type == PointerEventType.Enter && !finger ->
+                                report(true, null, x, y, null, null)
+                            event.type == PointerEventType.Exit && !finger ->
+                                report(false, null, null, null, null, null)
+                            event.type == PointerEventType.Move && !finger ->
+                                report(null, null, x, y, null, rubber)
                         }
                         change.consume()
                     }
@@ -282,9 +313,35 @@ internal fun DigitizerDetail(connector: PairingConnector?) {
                 drawLine(ink, stroke[i - 1], stroke[i], strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
             }
         }
+        if (!prefs.digitizerHideDrawButton) {
+            val side = when (prefs.digitizerDrawButtonSide) {
+                "top_left" -> Alignment.TopStart
+                "top_right" -> Alignment.TopEnd
+                "bottom_right" -> Alignment.BottomEnd
+                else -> Alignment.BottomStart
+            }
+            // Hold with one finger while drawing with another (buttonDraw).
+            Box(
+                Modifier.align(side).padding(12.dp).size(64.dp)
+                    .background(if (drawHeld) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown().consume()
+                            drawHeld = true
+                            do { val e = awaitPointerEvent(); e.changes.forEach { it.consume() } } while (e.changes.any { it.pressed })
+                            drawHeld = false
+                        }
+                    }
+                    .semantics { contentDescription = "Малювати пальцем" },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Outlined.Draw, null, tint = if (drawHeld) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        }
     }
+    Spacer(Modifier.height(16.dp))
+    DigitizerSettings()
 }
-
 
 /** Position bar ticking once a second while playing (MprisNowPlayingFragment.positionSeek). */
 @Composable

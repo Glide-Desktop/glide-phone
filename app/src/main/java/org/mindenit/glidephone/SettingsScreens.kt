@@ -466,3 +466,31 @@ internal fun ShareSettingsSection() {
         prefs.shareAlert = it; alert = it
     }
 }
+
+/** DigitizerPlugin settings: the finger "draw" button. */
+@Composable
+internal fun DigitizerSettings() {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var hidden by remember { mutableStateOf(prefs.digitizerHideDrawButton) }
+    var side by remember { mutableStateOf(prefs.digitizerDrawButtonSide) }
+    SwitchRow("Сховати кнопку малювання", "Пальцем тоді лише рухається вказівник", hidden) {
+        prefs.digitizerHideDrawButton = it; hidden = it
+    }
+    if (!hidden) {
+        val sides = linkedMapOf("top_left" to "Вгорі ліворуч", "top_right" to "Вгорі праворуч",
+            "bottom_left" to "Внизу ліворуч", "bottom_right" to "Внизу праворуч")
+        var open by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Розташування кнопки", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Box {
+                TextButton(onClick = { open = true }) { Text(sides[side] ?: side) }
+                DropdownMenu(open, { open = false }) {
+                    sides.forEach { (key, label) ->
+                        DropdownMenuItem(text = { Text(label) }, onClick = { prefs.digitizerDrawButtonSide = key; side = key; open = false })
+                    }
+                }
+            }
+        }
+    }
+}

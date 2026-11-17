@@ -93,6 +93,13 @@ class LiveDesktopTest {
         send(ProtocolPackets.TYPE_RUNCOMMAND_REQUEST, JSONObject().put("requestCommandList", true))
         awaitType(ProtocolPackets.TYPE_RUNCOMMAND) { it.has("commandList") }
 
+        // What the computer sends to the phone (the script triggers it over D-Bus).
+        awaitType(ProtocolPackets.TYPE_PING)
+        val shared = awaitType(ProtocolPackets.TYPE_SHARE_REQUEST) { it.has("text") }
+        assertEquals("glide-live-text", shared.getString("text"))
+        val typed = awaitType(ProtocolPackets.TYPE_MOUSEPAD_REQUEST) { it.has("key") }
+        assertEquals("ї", typed.getString("key"))
+
         // Things the desktop shows; the script checks them over D-Bus afterwards.
         send(ProtocolPackets.TYPE_BATTERY, JSONObject().put("currentCharge", 42).put("isCharging", true).put("thresholdEvent", 0))
         send(ProtocolPackets.TYPE_CONNECTIVITY_REPORT,

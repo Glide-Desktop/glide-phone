@@ -37,7 +37,15 @@ import json,sys
 raw=sys.stdin.read().split(' ',1)[1]
 for d in json.loads(json.loads(raw)):
     if d['pair_state']=='RequestedByPeer': print(d['id']); break" 2>/dev/null || true)"
-    if [ -n "$id" ]; then call AcceptPair s "$id" >/dev/null; echo "accepted $id"; break; fi
+    if [ -n "$id" ]; then
+      call AcceptPair s "$id" >/dev/null; echo "accepted $id"
+      # Then what the computer sends to the phone.
+      sleep 4
+      call Ping s "$id" >/dev/null
+      call ShareText ss "$id" "glide-live-text" >/dev/null
+      call ControlPhoneInput ss "$id" '{"key":"ї"}' >/dev/null
+      break
+    fi
     sleep 0.5
   done
 ) &

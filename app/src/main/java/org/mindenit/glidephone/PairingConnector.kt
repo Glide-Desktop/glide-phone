@@ -373,7 +373,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
                 if (!peer.isGlide) {
                     // This app talks to Glide Phone desktops only; tell the user why it isn't listed.
-                    if (refusedPeers.put(peer.id, peer.name) == null) emit(Event.PeersChanged)
+                    if (refusedPeers.size < MAX_REFUSED && refusedPeers.put(peer.id, peer.name) == null) emit(Event.PeersChanged)
                     continue
                 }
                 // On an untrusted network only already paired devices may connect.
@@ -383,14 +383,29 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val now = android.os.SystemClock.elapsedRealtime()
                 val last = lastDial[peer.id]
                 if (last != null && now - last < DIAL_INTERVAL_MS) continue
+                // A few dials at a time: announcements from many (spoofed) ids must not pile up
+                // blocked threads before anything is paired.
+                if (dialsInFlight.get() >= MAX_DIALS) continue
                 lastDial[peer.id] = now
-                io.execute {
-                    runCatching {
-                        val identity = LocalIdentity().loadOrCreate()
-                        val trusted = TrustedPeerStore(app)
-                        val handshake = IncomingHandshake.connect(peer, address, identity, deviceName) { trusted.certificate(it, identity.id) }
-                        adopt(handshake, identity, trusted)
+                if (lastDial.size > 256) lastDial.entries.removeIf { now - it.value > DIAL_INTERVAL_MS }
+                dialsInFlight.incrementAndGet()
+                try {
+                    io.execute {
+                        runCatching {
+                            val identity = LocalIdentity().loadOrCreate()
+                            val trusted = TrustedPeerStore(app)
+                            // Only the dial counts; the session that follows runs as long as the link.
+                            val handshake = try {
+                                IncomingHandshake.connect(peer, address, identity, deviceName) { trusted.certificate(it, identity.id) }
+                            } finally {
+                                dialsInFlight.decrementAndGet()
+                            }
+                            adopt(handshake, identity, trusted)
+                        }
                     }
+                } catch (e: RejectedExecutionException) {
+                    dialsInFlight.decrementAndGet()
+                    throw e
                 }
             } catch (_: RejectedExecutionException) {
                 break
@@ -416,6 +431,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     /** KDE Connect (non-Glide) computers seen on the network, by id -> name. */
     private val refusedPeers = ConcurrentHashMap<String, String>()
+    private val dialsInFlight = java.util.concurrent.atomic.AtomicInteger()
     val refusedPeerNames: Collection<String> get() = refusedPeers.values
 
     /** True once the server runs; it then owns UDP 1716 and reports peers to listeners. */
@@ -1614,6 +1630,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val BROADCAST_INTERVAL_MS = 15_000L
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
+        const val MAX_DIALS = 8
+        const val MAX_REFUSED = 32
         const val RATE_LIMIT_MS = 1_000L
         const val ICON_ACCEPT_TIMEOUT_MS = 10_000
         const val MAX_ICON_MISSES = 2

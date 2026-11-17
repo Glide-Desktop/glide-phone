@@ -137,3 +137,35 @@ class RunCommandControlsService : ControlsProviderService() {
         subscribers.forEach { it.onNext(updated) }
     }
 }
+
+/**
+ * kdeconnect://runcommand/<device>/<command> links (e.g. on an NFC tag), as
+ * RunCommandUrlActivity: runs the command and vibrates, or explains why it can't.
+ */
+class RunCommandUrlActivity : androidx.activity.ComponentActivity() {
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        val segments = intent.data?.pathSegments.orEmpty()
+        val deviceId = segments.getOrNull(0)
+        val key = segments.getOrNull(1)
+        val problem = when {
+            deviceId == null || key == null -> "Неправильне посилання на команду"
+            GlideHub.connector(this).pairedDevices().none { it.id == deviceId } -> "Пристрій не сполучено"
+            !RunCommandStore.run(this, deviceId, key) -> "Пристрій недоступний"
+            else -> null
+        }
+        if (problem != null) {
+            android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
+        } else {
+            val vibrator = getSystemService(android.os.Vibrator::class.java)
+            if (vibrator?.hasVibrator() == true) {
+                @Suppress("DEPRECATION") vibrator.vibrate(100)
+            }
+        }
+        finish()
+    }
+
+    companion object {
+        fun url(deviceId: String, key: String) = "kdeconnect://runcommand/$deviceId/$key"
+    }
+}

@@ -1169,12 +1169,25 @@ private fun ColumnScope.RunCommandDetail(connector: PairingConnector?, commands:
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             commands.forEach { cmd ->
-                FeatureNavRow(
-                    Icons.AutoMirrored.Outlined.PlaylistPlay,
-                    cmd.name.ifBlank { "Команда" },
-                    cmd.command.ifBlank { "Виконати на комп’ютері" },
-                    trailing = Icons.Outlined.Terminal
-                ) { connector?.sendRunCommandRequest(cmd.key) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        FeatureNavRow(
+                            Icons.AutoMirrored.Outlined.PlaylistPlay,
+                            cmd.name.ifBlank { "Команда" },
+                            cmd.command.ifBlank { "Виконати на комп’ютері" },
+                            trailing = Icons.Outlined.Terminal
+                        ) { connector?.sendRunCommandRequest(cmd.key) }
+                    }
+                    // RunCommandActivity "copy URL": for NFC tags, automation apps, etc.
+                    if (deviceId != null) {
+                        val context = LocalContext.current
+                        IconButton(onClick = {
+                            context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(
+                                android.content.ClipData.newPlainText("Command", RunCommandUrlActivity.url(deviceId, cmd.key)))
+                            android.widget.Toast.makeText(context, "Посилання на команду скопійовано", android.widget.Toast.LENGTH_SHORT).show()
+                        }) { Icon(Icons.Outlined.ContentCopy, "Копіювати посилання на ${cmd.name}") }
+                    }
+                }
             }
         }
     }

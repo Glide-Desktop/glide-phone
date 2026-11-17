@@ -79,7 +79,8 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" --title "Glide Phone $GITHUB_REF_NAME" \
-              --notes "Android APK built from $GITHUB_REF_NAME."
+              --notes "Android APK built from $GITHUB_REF_NAME." \
+              $(case "$GITHUB_REF_NAME" in *-*) echo --prerelease ;; esac)
           gh release upload "$GITHUB_REF_NAME" out/*.apk --clobber
 
       - uses: actions/upload-artifact@v4

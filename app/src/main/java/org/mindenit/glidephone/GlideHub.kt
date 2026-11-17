@@ -56,6 +56,9 @@ internal object GlideHub {
     @androidx.annotation.VisibleForTesting
     @Volatile var offline = false
 
+    @androidx.annotation.VisibleForTesting
+    internal fun injectForTests(context: Context, event: PairingConnector.Event) = onEvent(context.applicationContext, event)
+
     /** Drop the connector and all observed state (tests run many launches in one process). */
     @androidx.annotation.VisibleForTesting
     fun resetForTests() {
@@ -138,6 +141,7 @@ internal object GlideHub {
                 mediaStates = mediaStates.filterKeys { !it.startsWith("${event.id}/") }
                 volumeSinks = volumeSinks - event.id
                 keyboardDisabled = keyboardDisabled - event.id
+                RemoteMediaNotification.update(context)
                 val shown = pairingEvent
                 if (shown is PairingConnector.Event.Connected && shown.id == event.id) pairingEvent = event
                 GlideService.refresh(context)
@@ -190,14 +194,22 @@ internal object GlideHub {
                 mediaStates = mediaStates.filterKeys { key ->
                     !key.startsWith("${event.id}/") || key.removePrefix("${event.id}/") in event.players
                 }
+                RemoteMediaNotification.update(context)
             }
-            is PairingConnector.Event.MediaUpdate ->
+            is PairingConnector.Event.MediaUpdate -> {
                 mediaStates = mediaStates + (mediaKey(event.id, event.state.player) to event.state)
-            is PairingConnector.Event.VolumeSinks -> volumeSinks = volumeSinks + (event.id to event.sinks)
+                RemoteMediaNotification.update(context)
+            }
+            is PairingConnector.Event.VolumeSinks -> {
+                volumeSinks = volumeSinks + (event.id to event.sinks)
+                RemoteMediaNotification.update(context)
+            }
             is PairingConnector.Event.KeyboardState ->
                 keyboardDisabled = if (event.enabled) keyboardDisabled - event.id else keyboardDisabled + event.id
-            is PairingConnector.Event.MediaArt ->
+            is PairingConnector.Event.MediaArt -> {
                 mediaArt = (mediaArt - event.url + (event.url to event.image)).entries.toList().takeLast(12).associate { it.key to it.value }
+                RemoteMediaNotification.update(context)
+            }
         }
     }
 }

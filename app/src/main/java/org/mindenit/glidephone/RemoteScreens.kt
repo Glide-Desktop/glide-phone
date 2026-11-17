@@ -56,6 +56,8 @@ internal fun MediaDetail(connector: PairingConnector?, deviceId: String?) {
     Body("Керуйте музикою та відео, що відтворюються на комп’ютері.")
     Spacer(Modifier.height(16.dp))
     NotConnectedNotice(connector)
+    MediaNotificationSettings()
+    Spacer(Modifier.height(12.dp))
     if (player == null) {
         InfoCard(Icons.Outlined.MusicNote, "Немає активних плеєрів", "Запустіть відтворення на комп’ютері — плеєр з’явиться тут.")
         Spacer(Modifier.height(8.dp))

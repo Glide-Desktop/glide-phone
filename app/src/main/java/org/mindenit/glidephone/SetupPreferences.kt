@@ -61,7 +61,19 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_CONTACTS_ACCEPTED, false)
         set(value) { preferences.edit().putBoolean(KEY_CONTACTS_ACCEPTED, value).apply() }
 
+    /** mpris_notification: show the computer's player as a media notification. */
+    var mprisNotification: Boolean
+        get() = preferences.getBoolean(KEY_MPRIS_NOTIFICATION, true)
+        set(value) { preferences.edit().putBoolean(KEY_MPRIS_NOTIFICATION, value).apply() }
+
+    /** pref_mpris_volume_control: volume keys change the computer's volume while it shows. */
+    var mprisVolumeKeys: Boolean
+        get() = preferences.getBoolean(KEY_MPRIS_VOLUME, true)
+        set(value) { preferences.edit().putBoolean(KEY_MPRIS_VOLUME, value).apply() }
+
     private companion object {
+        const val KEY_MPRIS_NOTIFICATION = "mpris_notification"
+        const val KEY_MPRIS_VOLUME = "mpris_volume_keys"
         const val KEY_CONTACTS_ACCEPTED = "contacts_accepted"
         const val KEY_EDITING_ONLY = "remotekeyboard_editing_only"
         const val KEY_RINGTONE = "findmyphone_ringtone"

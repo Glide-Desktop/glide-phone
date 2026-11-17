@@ -99,6 +99,9 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.GlidePhone.Translucent" />
         <receiver
+            android:name=".MediaNotificationReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".StartupReceiver"
             android:exported="true">
             <intent-filter>

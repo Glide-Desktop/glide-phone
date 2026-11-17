@@ -340,3 +340,20 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
         Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.semantics { contentDescription = title })
     }
 }
+
+/** MprisPlugin preferences: media notification and volume keys. */
+@Composable
+internal fun MediaNotificationSettings() {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var shown by remember { mutableStateOf(prefs.mprisNotification) }
+    var volumeKeys by remember { mutableStateOf(prefs.mprisVolumeKeys) }
+    SwitchRow("Сповіщення з керуванням", "Кнопки плеєра в шторці й на екрані блокування", shown) {
+        prefs.mprisNotification = it; shown = it
+        RemoteMediaNotification.update(context)
+    }
+    SwitchRow("Кнопки гучності телефона", "Змінюють гучність комп’ютера, поки показано сповіщення", volumeKeys) {
+        prefs.mprisVolumeKeys = it; volumeKeys = it
+        RemoteMediaNotification.update(context)
+    }
+}

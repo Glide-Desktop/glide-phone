@@ -37,6 +37,19 @@ internal object TelephonyReporter {
     }
     @Volatile private var lastNumber = ""
 
+    /** Numbers the user never wants announced (telephony_blocked_numbers, one per line). */
+    fun blockedNumbers(context: Context): List<String> =
+        context.getSharedPreferences("telephony", Context.MODE_PRIVATE).getString("blocked_numbers", "").orEmpty()
+            .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun setBlockedNumbers(context: Context, numbers: List<String>) {
+        context.getSharedPreferences("telephony", Context.MODE_PRIVATE).edit()
+            .putString("blocked_numbers", numbers.joinToString("\n")).apply()
+    }
+
+    private fun isBlocked(context: Context, number: String?): Boolean =
+        !number.isNullOrBlank() && blockedNumbers(context).any { android.telephony.PhoneNumberUtils.compare(number, it) }
+
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
 
@@ -47,6 +60,7 @@ internal object TelephonyReporter {
         val l = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                 val number = phoneNumber?.takeIf { it.isNotBlank() } ?: lastNumber
+                if (isBlocked(context, number)) return
                 // Without a matching contact KDE Connect shows the number as the name.
                 val name = ContactsProvider.nameForNumber(context, number).ifBlank { number }
                 val photo = if (state == TelephonyManager.CALL_STATE_IDLE) null else ContactsProvider.photoForNumber(context, number)

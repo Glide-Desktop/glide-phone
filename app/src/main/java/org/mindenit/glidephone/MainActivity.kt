@@ -991,6 +991,8 @@ private fun DetailScreen(
                     Body("Усі з’єднання шифруються через TLS із взаємною автентифікацією за локальними сертифікатами. Дані не надсилаються на сторонні сервери.")
                     Spacer(Modifier.height(16.dp))
                     InfoCard(Icons.Outlined.Shield, "Наскрізне шифрування", "Сполучення підтверджується кодом на обох пристроях перед обміном даними.")
+                    Spacer(Modifier.height(20.dp))
+                    SyncPrivacySection()
                 }
                 Detail.PRESENTER -> PresenterDetail(connector, selectedFeatures, onFeatureChange)
                 Detail.REMOTE -> RemoteControlDetail(connector, deviceId)
@@ -1013,6 +1015,10 @@ private fun DetailScreen(
                     )
                     Spacer(Modifier.height(20.dp))
                     FeatureToggleRow(feature.icon, feature.title, feature.description, feature.id in selectedFeatures) { onFeatureChange(feature.id, it) }
+                    Spacer(Modifier.height(20.dp))
+                    SectionLabel("Програми")
+                    Spacer(Modifier.height(8.dp))
+                    NotificationFilterSection()
                 }
                 Detail.BATTERY -> BatteryDetail(context, connector, peerBattery, selectedFeatures, onFeatureChange)
             }

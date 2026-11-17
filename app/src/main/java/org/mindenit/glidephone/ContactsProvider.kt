@@ -12,9 +12,12 @@ internal object ContactsProvider {
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
+    /** Sharing the address book also needs the user's explicit consent (ContactsPlugin). */
+    private fun mayShare(context: Context) = hasPermission(context) && SetupPreferences(context).contactsAccepted
+
     /** uid -> last-updated timestamp (ms). */
     fun uidTimestamps(context: Context): Map<String, Long> {
-        if (!hasPermission(context)) return emptyMap()
+        if (!mayShare(context)) return emptyMap()
         val out = LinkedHashMap<String, Long>()
         runCatching {
             context.contentResolver.query(
@@ -35,7 +38,7 @@ internal object ContactsProvider {
     }
 
     fun vcards(context: Context, uids: List<String>, deviceId: String): Map<String, String> {
-        if (!hasPermission(context)) return emptyMap()
+        if (!mayShare(context)) return emptyMap()
         val timestamps = uidTimestamps(context)
         val out = LinkedHashMap<String, String>()
         uids.take(500).forEach { uid ->

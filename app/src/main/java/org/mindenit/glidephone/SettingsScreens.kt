@@ -238,3 +238,105 @@ private fun ServiceRow(title: String, enabled: Boolean, onOpen: () -> Unit) {
         TextButton(onClick = onOpen) { Text("Налаштувати") }
     }
 }
+
+/** Per-app notification forwarding and privacy (KDE Connect NotificationFilterActivity). */
+@Composable
+internal fun NotificationFilterSection() {
+    val context = LocalContext.current
+    val filter = remember { NotificationFilter(context) }
+    var version by remember { mutableStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    val apps by produceState(initialValue = emptyList<Pair<String, String>>()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val pm = context.packageManager
+            val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(launcher, 0)
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .distinctBy { it.first }
+                .filter { it.first != context.packageName }
+                .sortedBy { it.second.lowercase() }
+        }
+    }
+    version // recompose after changes
+    var locked by remember { mutableStateOf(filter.alertOnlyWhenLocked) }
+    SwitchRow("Сповіщати лише коли телефон заблоковано", "Інакше сповіщення надходять без звуку", locked) {
+        filter.alertOnlyWhenLocked = it; locked = it
+    }
+    Spacer(Modifier.height(8.dp))
+    SwitchRow("Усі програми", "Надсилати сповіщення з усіх програм", filter.allEnabled) {
+        filter.allEnabled = it; version++
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Пошук програми") })
+    Spacer(Modifier.height(8.dp))
+    val shown = apps.filter { query.isBlank() || it.second.contains(query, ignoreCase = true) || it.first.contains(query, ignoreCase = true) }
+    shown.take(200).forEach { (pkg, label) ->
+        Column(Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { expanded = if (expanded == pkg) null else pkg }, modifier = Modifier.weight(1f)) {
+                    Text(label, Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Switch(
+                    checked = filter.isEnabled(pkg),
+                    onCheckedChange = { filter.setEnabled(pkg, it); version++ },
+                    modifier = Modifier.semantics { contentDescription = label }
+                )
+            }
+            if (expanded == pkg) {
+                SwitchRow("Приховати вміст", "Надсилати лише назву програми", filter.blocksContents(pkg)) {
+                    filter.setBlocksContents(pkg, it); version++
+                }
+                SwitchRow("Не надсилати зображення", "Без значків і картинок", filter.blocksImages(pkg)) {
+                    filter.setBlocksImages(pkg, it); version++
+                }
+            }
+        }
+    }
+}
+
+/** Contacts consent and numbers never announced on the computer. */
+@Composable
+internal fun SyncPrivacySection() {
+    val context = LocalContext.current
+    val prefs = remember { SetupPreferences(context) }
+    var contacts by remember { mutableStateOf(prefs.contactsAccepted) }
+    var asking by remember { mutableStateOf(false) }
+    SwitchRow("Передавати контакти", "Комп’ютер зможе бачити вашу адресну книгу", contacts) {
+        if (it) asking = true else { prefs.contactsAccepted = false; contacts = false }
+    }
+    if (asking) {
+        AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text("Поділитися контактами?") },
+            text = { Text("Сполучені комп’ютери отримають копію всіх контактів цього телефону.") },
+            confirmButton = { TextButton(onClick = { prefs.contactsAccepted = true; contacts = true; asking = false }) { Text("Дозволити") } },
+            dismissButton = { TextButton(onClick = { asking = false }) { Text("Скасувати") } }
+        )
+    }
+    Spacer(Modifier.height(16.dp))
+    Text("Заблоковані номери", style = MaterialTheme.typography.titleMedium)
+    Text("Дзвінки з цих номерів не показуються на комп’ютері, по одному в рядку",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(8.dp))
+    var blocked by remember { mutableStateOf(TelephonyReporter.blockedNumbers(context).joinToString("\n")) }
+    OutlinedTextField(
+        blocked,
+        { blocked = it; TelephonyReporter.setBlockedNumbers(context, it.lines()) },
+        Modifier.fillMaxWidth(),
+        minLines = 2,
+        label = { Text("Номери") }
+    )
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.semantics { contentDescription = title })
+    }
+}

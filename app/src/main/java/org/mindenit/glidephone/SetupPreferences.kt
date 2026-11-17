@@ -56,7 +56,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_EDITING_ONLY, true)
         set(value) { preferences.edit().putBoolean(KEY_EDITING_ONLY, value).apply() }
 
+    /** ContactsPlugin "acceptedToTransferContacts": explicit consent before sharing contacts. */
+    var contactsAccepted: Boolean
+        get() = preferences.getBoolean(KEY_CONTACTS_ACCEPTED, false)
+        set(value) { preferences.edit().putBoolean(KEY_CONTACTS_ACCEPTED, value).apply() }
+
     private companion object {
+        const val KEY_CONTACTS_ACCEPTED = "contacts_accepted"
         const val KEY_EDITING_ONLY = "remotekeyboard_editing_only"
         const val KEY_RINGTONE = "findmyphone_ringtone"
         const val KEY_FLASHLIGHT = "findmyphone_flashlight"

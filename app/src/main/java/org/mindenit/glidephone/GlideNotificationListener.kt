@@ -76,13 +76,18 @@ class GlideNotificationListener : NotificationListenerService() {
         super.onDestroy()
     }
 
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         active[sbn.key] = sbn
-        publish(sbn)
+        // Coalesce rapid updates of the same notification (NOTIFICATION_SYNC_DELAY_MS).
+        handler.removeCallbacksAndMessages(sbn.key)
+        handler.postAtTime({ if (active[sbn.key] === sbn) publish(sbn) }, sbn.key, android.os.SystemClock.uptimeMillis() + 50)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         active.remove(sbn.key)
+        handler.removeCallbacksAndMessages(sbn.key)
         if (announced.remove(sbn.key)) {
             NotificationBridge.send(ProtocolPackets.notificationCancel(sbn.key))
         }
@@ -131,6 +136,12 @@ class GlideNotificationListener : NotificationListenerService() {
             (sbn.tag == "low_battery" || (android.os.Build.VERSION.SDK_INT >= 26 && notification.channelId == "MediaOngoingActivity"))) return
         if (android.os.Build.VERSION.SDK_INT >= 29 &&
             runCatching { packageManager.isPackageSuspended(sbn.packageName) }.getOrDefault(false)) return
+        val filter = NotificationFilter(this)
+        if (!filter.isEnabled(sbn.packageName)) return
+        val hideContents = filter.blocksContents(sbn.packageName)
+        // "Only alert while locked": still send, but silently while the phone is in use.
+        val quiet = filter.alertOnlyWhenLocked &&
+            getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked != true
         val isUpdate = !announced.add(sbn.key)
         val title = notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.take(1000).orEmpty()
         val body = (notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
@@ -150,14 +161,20 @@ class GlideNotificationListener : NotificationListenerService() {
             appName = appName,
             title = title,
             text = body,
-            silent = forceSilent || (isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0),
+            silent = forceSilent || quiet || (isUpdate && notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0),
             actions = actionTitles,
             requestReplyId = if (hasReply) sbn.key else null,
             isClearable = sbn.isClearable,
             time = sbn.postTime
         ))
-        addConversation(notification, packet.getJSONObject("body"))
-        val icon = runCatching { extractIcon(sbn) }.getOrNull()
+        val packetBody = packet.getJSONObject("body")
+        if (hideContents) {
+            // AppDatabase BLOCK_CONTENTS: only that something arrived, from which app.
+            listOf("title", "text", "ticker", "requestReplyId").forEach { packetBody.remove(it) }
+        } else {
+            addConversation(notification, packetBody)
+        }
+        val icon = if (filter.blocksImages(sbn.packageName)) null else runCatching { extractIcon(sbn) }.getOrNull()
         NotificationBridge.send(packet.toString() + "\n", sbn.key, icon?.first, icon?.second)
     }
 

@@ -856,23 +856,57 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             ProtocolPackets.TYPE_SHAREINPUTDEVICES_REQUEST -> RemoteInput.handleShareInputDevices(body) { dx, dy ->
                 sendPacketTo(peerId, ProtocolPackets.shareInputDevicesRelease(dx, dy))
             }
-            ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> {
-                sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversations(app)))
+            ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATIONS -> runSms {
+                smsRequested()
+                // One packet per conversation, newest first (handleRequestAllConversations).
+                SmsProvider.conversations(app).forEach { sendPacketTo(peerId, ProtocolPackets.smsMessages(listOf(it))) }
             }
-            ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION -> {
-                val thread = body.opt("threadID")?.toString().orEmpty()
-                if (thread.isNotBlank()) {
-                    sendPacketTo(peerId, ProtocolPackets.smsMessages(SmsProvider.conversation(
-                        app, thread, body.optLong("rangeStartTimestamp", -1), body.optLong("numberToRequest", -1)
-                    )))
+            ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION -> runSms {
+                smsRequested()
+                val thread = body.optLong("threadID", -1)
+                if (thread >= 0) {
+                    val start = body.optLong("rangeStartTimestamp", -1)
+                    val count = body.optLong("numberToRequest", -1).takeIf { it >= 0 }
+                    val messages = SmsProvider.messagesInRange(app, thread, if (start < 0) Long.MAX_VALUE else start, count, older = true)
+                    sendPacketTo(peerId, ProtocolPackets.smsMessages(messages))
                 }
             }
-            ProtocolPackets.TYPE_SMS_REQUEST -> {
-                val address = body.optJSONArray("addresses")?.optJSONObject(0)?.optString("address")
-                    ?.takeIf { it.isNotBlank() } ?: body.optString("phoneNumber")
-                val text = body.optString("messageBody")
-                if (address.isNotBlank() && text.isNotBlank()) SmsProvider.send(app, address, text)
+            ProtocolPackets.TYPE_SMS_REQUEST -> runSms {
+                val list = body.optJSONArray("addresses")
+                val addresses = if (list != null) (0 until list.length()).mapNotNull { list.optJSONObject(it)?.optString("address") }
+                    else listOf(body.optString("phoneNumber"))
+                SmsProvider.send(app, addresses, body.optString("messageBody"), body.optLong("subID", -1).toInt())
             }
+        }
+    }
+
+    // ---- SMS (SMSPlugin) ----
+
+    private fun runSms(block: () -> Unit) {
+        try { smsExecutor.execute { runCatching(block) } } catch (_: RejectedExecutionException) {}
+    }
+
+    private val smsExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var smsObserver: android.database.ContentObserver? = null
+    @Volatile private var smsNewest = Long.MIN_VALUE
+
+    /** After the first request, push new messages as they arrive (MessageContentObserver). */
+    private fun smsRequested() {
+        if (smsObserver != null) return
+        synchronized(this) {
+            if (smsObserver != null) return
+            smsNewest = SmsProvider.newestTimestamp(app)
+            val observer = object : android.database.ContentObserver(main) {
+                override fun onChange(selfChange: Boolean) = runSms {
+                    val messages = SmsProvider.messagesInRange(app, null, smsNewest, null, older = false)
+                    if (messages.isEmpty()) return@runSms
+                    smsNewest = maxOf(smsNewest, messages.maxOf { it.optLong("date") })
+                    val packet = ProtocolPackets.smsMessages(messages)
+                    connections.keys.forEach { id -> if (plugins.allowsSending(id, ProtocolPackets.TYPE_SMS_MESSAGES)) sendPacketTo(id, packet) }
+                }
+            }
+            runCatching { app.contentResolver.registerContentObserver(SmsProvider.observedUri, true, observer) }
+            smsObserver = observer
         }
     }
 
@@ -1446,6 +1480,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         sftpServers.clear()
         NotificationBridge.detach(this)
         sender.shutdownNow()
+        smsExecutor.shutdownNow()
+        smsObserver?.let { runCatching { app.contentResolver.unregisterContentObserver(it) } }
         downloads.shutdownNow()
         smallDownloads.shutdownNow()
         payloadQueues.values.forEach { it.shutdownNow() }

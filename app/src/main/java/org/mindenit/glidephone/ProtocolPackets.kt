@@ -260,6 +260,8 @@ internal object ProtocolPackets {
     const val TYPE_SMS_REQUEST_CONVERSATION = "kdeconnect.sms.request_conversation"
     const val TYPE_SMS_MESSAGES = "kdeconnect.sms.messages"
 
+    fun smsMessages(messages: List<JSONObject>): String = smsMessages(JSONArray().apply { messages.forEach { put(it) } })
+
     fun smsMessages(messages: JSONArray): String = JSONObject()
         .put("id", System.currentTimeMillis())
         .put("type", TYPE_SMS_MESSAGES)

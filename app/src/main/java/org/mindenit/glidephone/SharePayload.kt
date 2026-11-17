@@ -107,6 +107,7 @@ internal object SharePayload {
         var secure: SSLSocket? = null
         var target: Pair<Uri?, java.io.OutputStream>? = null
         var complete = false
+        var partialFile: java.io.File? = null
         return try {
             val raw = java.net.Socket()
             raw.connect(InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS)
@@ -118,7 +119,8 @@ internal object SharePayload {
                 startHandshake()
             }
             val input = secure.inputStream
-            val opened = (if (open) null else openInCustomFolder(context, safeName)) ?: openDownload(context, safeName) ?: return null
+            val opened = (if (open) null else openInCustomFolder(context, safeName))
+                ?: openDownload(context, safeName) { partialFile = it } ?: return null
             target = opened
             opened.second.use { out ->
                 val buffer = ByteArray(64 * 1024)
@@ -141,7 +143,10 @@ internal object SharePayload {
         } finally {
             runCatching { secure?.close() }
             // Never leave a truncated file behind.
-            if (!complete) target?.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+            if (!complete) {
+                target?.first?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+                partialFile?.delete()
+            }
         }
     }
 
@@ -205,7 +210,9 @@ internal object SharePayload {
         }.getOrNull() // revoked or gone: fall back to Downloads
     }
 
-    private fun openDownload(context: android.content.Context, name: String): Pair<Uri?, java.io.OutputStream>? {
+    private fun openDownload(
+        context: android.content.Context, name: String, onLegacyFile: (java.io.File) -> Unit = {},
+    ): Pair<Uri?, java.io.OutputStream>? {
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
@@ -216,7 +223,13 @@ internal object SharePayload {
             return uri to out
         }
         val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: return null
-        val file = java.io.File(dir, name)
+        // Never overwrite an earlier file of the same name: "name (1).ext", like MediaStore does.
+        val base = name.substringBeforeLast('.', name)
+        val ext = name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
+        val file = generateSequence(0) { it + 1 }.take(1000)
+            .map { n -> java.io.File(dir, if (n == 0) name else "$base ($n)$ext") }
+            .firstOrNull { it.createNewFile() } ?: return null
+        onLegacyFile(file)
         return null as Uri? to file.outputStream()
     }
 

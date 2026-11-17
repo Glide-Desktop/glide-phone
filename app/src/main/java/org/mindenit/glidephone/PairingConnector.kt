@@ -86,7 +86,11 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val loopStatus: String? = null,
         val shuffle: Boolean? = null,
         /** elapsedRealtime when [position] was reported (MprisPlayer.lastPositionTime). */
-        val positionTime: Long = 0
+        val positionTime: Long = 0,
+        /** What is playing, e.g. a web page for browser players. */
+        val url: String = "",
+        /** elapsedRealtime when playback last started. */
+        val playStartTime: Long = 0
     ) {
         /** Position now, advancing while playing (MprisPlayer.getPosition). */
         fun currentPosition(now: Long = android.os.SystemClock.elapsedRealtime()): Long {
@@ -970,7 +974,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private fun handleMpris(peerId: String, body: JSONObject) {
         body.optJSONArray("playerList")?.let { array ->
             val players = buildList { for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotEmpty() }?.let(::add) }
-            mediaStates.keys.removeAll { key -> key.startsWith("$peerId/") && key.removePrefix("$peerId/") !in players }
+            mediaStates.entries.filter { (key, _) -> key.startsWith("$peerId/") && key.removePrefix("$peerId/") !in players }
+                .forEach { (key, state) ->
+                    mediaStates.remove(key)
+                    // A playing player went away (e.g. its browser tab closed).
+                    if (state.isPlaying) ContinueWatching.maybeShow(app, state) { true }
+                }
             emit(Event.MediaPlayers(peerId, players))
             players.forEach { player ->
                 sendPacketTo(peerId, ProtocolPackets.mprisRequest(
@@ -1007,10 +1016,17 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             canSeek = body.optBoolean("canSeek", old.canSeek),
             albumArtUrl = artUrl,
             loopStatus = if (body.has("loopStatus")) body.optString("loopStatus") else old.loopStatus,
-            shuffle = if (body.has("shuffle")) body.optBoolean("shuffle") else old.shuffle
+            shuffle = if (body.has("shuffle")) body.optBoolean("shuffle") else old.shuffle,
+            url = body.optString("url", old.url),
+            playStartTime = if (body.optBoolean("isPlaying", old.isPlaying) && !old.isPlaying)
+                android.os.SystemClock.elapsedRealtime() else old.playStartTime
         )
         mediaStates[key] = updated
         emit(Event.MediaUpdate(peerId, updated))
+        // A stream stopped while nobody watches the media screen: offer to continue here.
+        if (body.has("isPlaying") && !updated.isPlaying && old.isPlaying && !GlideHub.inForeground) {
+            ContinueWatching.maybeShow(app, updated) { mediaStates[key]?.isPlaying != true }
+        }
         if (artUrl.isNotEmpty() && artUrl != old.albumArtUrl) fetchAlbumArt(peerId, player, artUrl)
     }
 

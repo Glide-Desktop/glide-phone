@@ -109,7 +109,13 @@ internal class SetupPreferences(context: Context) {
         get() = preferences.getString(KEY_DIGITIZER_SIDE, "bottom_left") ?: "bottom_left"
         set(value) { preferences.edit().putString(KEY_DIGITIZER_SIDE, value).apply() }
 
+    /** mpris_keepwatching_enabled: offer to continue a web video on the phone. */
+    var mprisKeepWatching: Boolean
+        get() = preferences.getBoolean(KEY_MPRIS_KEEP_WATCHING, true)
+        set(value) { preferences.edit().putBoolean(KEY_MPRIS_KEEP_WATCHING, value).apply() }
+
     private companion object {
+        const val KEY_MPRIS_KEEP_WATCHING = "mpris_keepwatching_enabled"
         const val KEY_DIGITIZER_HIDE = "digitizer_hide_draw_button"
         const val KEY_DIGITIZER_SIDE = "digitizer_draw_button_side"
         const val KEY_SHARE_DESTINATION = "share_destination_folder_uri"

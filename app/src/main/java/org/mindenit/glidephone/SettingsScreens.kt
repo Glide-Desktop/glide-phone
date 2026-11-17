@@ -356,6 +356,10 @@ internal fun MediaNotificationSettings() {
         prefs.mprisVolumeKeys = it; volumeKeys = it
         RemoteMediaNotification.update(context)
     }
+    var keepWatching by remember { mutableStateOf(prefs.mprisKeepWatching) }
+    SwitchRow("Продовжувати перегляд на телефоні", "Коли відео з браузера зупиняється на комп’ютері", keepWatching) {
+        prefs.mprisKeepWatching = it; keepWatching = it
+    }
     var seek by remember { mutableStateOf(prefs.mprisSeekMicros) }
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

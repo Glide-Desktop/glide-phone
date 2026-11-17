@@ -41,7 +41,7 @@ internal object RemoteNotifications {
             .setLocalOnly(true)
             .setLargeIcon(icon?.let { largeIcon(context, it) })
             .setContentIntent(android.app.PendingIntent.getActivity(
-                context, 0, android.content.Intent(context, MainActivity::class.java),
+                context, localId, android.content.Intent(context, MainActivity::class.java),
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             ))
             .build()

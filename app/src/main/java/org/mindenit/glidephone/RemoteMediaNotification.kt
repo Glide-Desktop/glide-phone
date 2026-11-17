@@ -107,7 +107,8 @@ internal object RemoteMediaNotification {
             .setOngoing(state.isPlaying)
             .setLocalOnly(true)
             .setGroup("MprisMediaSession")
-            .setContentIntent(PendingIntent.getActivity(app, 0,
+            // Own request code: extras don't make PendingIntents distinct.
+            .setContentIntent(PendingIntent.getActivity(app, NOTIFICATION_ID,
                 Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_DETAIL, "MEDIA")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))

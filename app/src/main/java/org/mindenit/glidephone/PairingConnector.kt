@@ -49,7 +49,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         data class FileReceived(val id: String, val fileName: String, val success: Boolean) : Event
         data class CommandList(val id: String, val commands: List<RemoteCommand>, val canAddCommand: Boolean) : Event
         data class CommandOutput(val id: String, val line: CommandLine) : Event
-        data class RemoteNotification(val id: String, val notificationId: String, val appName: String, val title: String, val text: String, val cancel: Boolean) : Event
+        data class RemoteNotification(
+            val id: String, val notificationId: String, val appName: String, val title: String, val text: String,
+            val cancel: Boolean, val silent: Boolean = false, val icon: ByteArray? = null
+        ) : Event
         data class MediaPlayers(val id: String, val players: List<String>) : Event
         data class MediaUpdate(val id: String, val state: MediaState) : Event
         data class VolumeSinks(val id: String, val sinks: List<VolumeSink>) : Event
@@ -750,14 +753,34 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             ProtocolPackets.TYPE_NOTIFICATION -> {
                 val nid = body.optString("id")
                 if (nid.isNotEmpty()) {
-                    emit(Event.RemoteNotification(
+                    val event = Event.RemoteNotification(
                         peerId, nid,
                         body.optString("appName", peerName),
                         body.optString("title"),
                         // Desktops may only fill "ticker"; KDE Connect displays that field.
                         body.optString("text").ifEmpty { body.optString("ticker") },
-                        body.optBoolean("isCancel", false)
-                    ))
+                        body.optBoolean("isCancel", false),
+                        body.optBoolean("silent", false)
+                    )
+                    val port = body.optInt(ProtocolPackets.KEY_PAYLOAD_PORT, -1)
+                    val size = body.optLong(ProtocolPackets.KEY_PAYLOAD_SIZE, -1)
+                    val connection = connections[peerId]
+                    if (!event.cancel && port > 0 && size > 0 && connection != null) {
+                        // The icon comes as a payload (ReceiveNotificationsPlugin's largeIcon).
+                        try {
+                            downloads.execute {
+                                val icon = runCatching {
+                                    SharePayload.receiveBytes(LocalIdentity().loadOrCreate(), connection.pending.certificate,
+                                        connection.pending.socket.inetAddress, port, size, MAX_ART_BYTES.toInt())
+                                }.getOrNull()
+                                emit(event.copy(icon = icon))
+                            }
+                        } catch (_: RejectedExecutionException) {
+                            emit(event)
+                        }
+                    } else {
+                        emit(event)
+                    }
                 }
             }
             ProtocolPackets.TYPE_NOTIFICATION_ACTION,

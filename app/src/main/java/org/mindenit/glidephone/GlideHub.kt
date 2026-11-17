@@ -181,8 +181,9 @@ internal object GlideHub {
                 })
             }
             is PairingConnector.Event.RemoteNotification -> {
-                if (event.cancel) RemoteNotifications.cancel(context, event.notificationId)
-                else RemoteNotifications.post(context, event.notificationId, event.appName, event.title, event.text)
+                if (event.cancel) RemoteNotifications.cancel(context, "${event.id}/${event.notificationId}")
+                else RemoteNotifications.post(context, "${event.id}/${event.notificationId}", event.appName, event.title, event.text,
+                    silent = event.silent, icon = event.icon)
             }
             is PairingConnector.Event.MediaPlayers -> {
                 mediaPlayers = mediaPlayers + (event.id to event.players)

@@ -23,7 +23,8 @@ internal object RemoteNotifications {
         }
     }
 
-    fun post(context: Context, key: String, appName: String, title: String, text: String) {
+    fun post(context: Context, key: String, appName: String, title: String, text: String,
+             silent: Boolean = false, icon: ByteArray? = null) {
         if (title.isBlank() && text.isBlank()) return
         if (!hasPermission(context)) return
         ensureChannel(context)
@@ -35,6 +36,10 @@ internal object RemoteNotifications {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
+            .setSilent(silent)
+            // Never bounce it back to other KDE Connect peers through our own listener.
+            .setLocalOnly(true)
+            .setLargeIcon(icon?.let { largeIcon(context, it) })
             .setContentIntent(android.app.PendingIntent.getActivity(
                 context, 0, android.content.Intent(context, MainActivity::class.java),
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
@@ -44,6 +49,13 @@ internal object RemoteNotifications {
             NotificationManagerCompat.from(context).notify(localId, notification)
         } catch (_: SecurityException) {
         }
+    }
+
+    private fun largeIcon(context: Context, bytes: ByteArray): android.graphics.Bitmap? {
+        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val width = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width)
+        val height = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_height)
+        return if (bitmap.width > width || bitmap.height > height) android.graphics.Bitmap.createScaledBitmap(bitmap, width, height, true) else bitmap
     }
 
     fun cancel(context: Context, key: String) {

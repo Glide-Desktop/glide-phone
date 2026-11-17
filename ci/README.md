@@ -19,4 +19,6 @@ Create a key with:
 keytool -genkeypair -keystore release.jks -alias glide -keyalg RSA -keysize 4096 -validity 36500
 ```
 
-Releases: push a tag `vX.Y.Z`; the APK is attached to the GitHub release of that tag.
+Releases: push a tag `vX.Y.Z`; the APK (versionName `X.Y.Z`, versionCode = the CI run number, so
+newer builds always update older ones) is attached to the GitHub release of that tag. Every push to
+`main`, `fix/**`, `feat/**` and every pull request builds the same APK as a workflow artifact.

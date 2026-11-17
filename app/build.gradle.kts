@@ -5,9 +5,9 @@ plugins {
 
 // Version from the release tag (CI passes -PglideVersion=1.2.3), else the development default.
 val glideVersion: String = (findProperty("glideVersion") as String?)?.removePrefix("v") ?: "1.0"
-val glideVersionCode: Int = glideVersion.split('.', '-').take(3).mapIndexed { i, part ->
-    (part.toIntOrNull() ?: 0) * when (i) { 0 -> 10000; 1 -> 100; else -> 1 }
-}.sum().coerceAtLeast(1)
+// CI passes its run number (-PglideVersionCode), which only grows, so every newer build
+// (tagged or not) installs over the previous one.
+val glideVersionCode: Int = (findProperty("glideVersionCode") as String?)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
 
 // Release signing: a real key from the environment (CI secrets or a local shell), otherwise
 // the public CI test key in ci/, so builds stay installable and update each other.

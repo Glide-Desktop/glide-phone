@@ -59,6 +59,7 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           ./gradlew --no-daemon -PglideVersion="${{ steps.version.outputs.version }}" \
+            -PglideVersionCode="$GITHUB_RUN_NUMBER" \
             :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk \

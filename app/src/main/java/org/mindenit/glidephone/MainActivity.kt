@@ -59,6 +59,7 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Lan
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Speaker
 import androidx.compose.material.icons.outlined.Draw
@@ -141,6 +142,7 @@ internal enum class Detail(val title: String, val icon: ImageVector) {
     VOLUME("Гучність комп’ютера", Icons.Outlined.Speaker),
     DIGITIZER("Графічний планшет", Icons.Outlined.Draw),
     NETWORK("Мережа", Icons.Outlined.Lan),
+    DEVICE_PLUGINS("Плагіни пристрою", Icons.Outlined.Extension),
     SETTINGS("Можливості", Icons.Outlined.Tune),
     PRIVACY("Приватність", Icons.Outlined.Shield),
     ABOUT("Про застосунок", Icons.Outlined.Info)
@@ -582,6 +584,7 @@ internal fun HomeScreen(
                 FeatureNavRow(Icons.Outlined.Terminal, "Команди", "Запускайте команди на комп’ютері") { onDetail(Detail.COMMANDS) }
                 FeatureNavRow(Icons.Outlined.Draw, "Графічний планшет", "Малюйте на комп’ютері пальцем або стилусом") { onDetail(Detail.DIGITIZER) }
                 FeatureNavRow(Icons.Outlined.WifiTethering, "Пінг", "Перевірте зв’язок із комп’ютером", trailing = Icons.AutoMirrored.Outlined.Send) { onPing() }
+                FeatureNavRow(Icons.Outlined.Extension, "Плагіни пристрою", "Які функції доступні «${selectedDevice.name}»") { onDetail(Detail.DEVICE_PLUGINS) }
                 FeatureNavRow(Icons.Outlined.Shield, "Приватність", "Керуйте доступом і тим, хто може підключатися") { onDetail(Detail.PRIVACY) }
             }
         }
@@ -974,6 +977,7 @@ private fun DetailScreen(
                 Detail.VOLUME -> VolumeDetail(connector, deviceId)
                 Detail.DIGITIZER -> DigitizerDetail(connector)
                 Detail.NETWORK -> NetworkDetail(connector)
+                Detail.DEVICE_PLUGINS -> DevicePluginsDetail(connector, deviceId)
                 Detail.RING -> RingDetail(context, connector, isRinging, onStopAlarm, selectedFeatures, onFeatureChange)
                 Detail.CLIPBOARD -> ClipboardDetail(context, connector, lastClipboard, selectedFeatures, onFeatureChange)
                 Detail.FILES -> FilesDetail(connector, lastShare, selectedFeatures, onFeatureChange)

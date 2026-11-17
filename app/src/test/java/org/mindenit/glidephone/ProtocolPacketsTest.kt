@@ -281,4 +281,12 @@ class ProtocolPacketsTest {
         assertEquals("QUJD", ring.getString("phoneThumbnail"))
         assertTrue(ProtocolPackets.TYPE_MOUSEPAD_KEYBOARDSTATE in IdentityPacket.INCOMING)
     }
+
+    @Test
+    fun everyAdvertisedTypeBelongsToAPlugin() {
+        val incoming = DevicePlugin.entries.flatMap { it.incoming }.toSet()
+        val outgoing = DevicePlugin.entries.flatMap { it.outgoing }.toSet()
+        IdentityPacket.INCOMING.forEach { assertTrue("no plugin receives $it", it in incoming) }
+        IdentityPacket.OUTGOING.forEach { assertTrue("no plugin sends $it", it in outgoing) }
+    }
 }

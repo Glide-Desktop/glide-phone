@@ -131,3 +131,34 @@ private fun AddressRow(icon: androidx.compose.ui.graphics.vector.ImageVector, la
         IconButton(onClick = onRemove) { Icon(Icons.Outlined.Delete, "Видалити $label") }
     }
 }
+
+/** Per-device plugin switches (KDE Connect's device plugin settings). */
+@Composable
+internal fun DevicePluginsDetail(connector: PairingConnector?, deviceId: String?) {
+    if (connector == null || deviceId == null) {
+        NotConnectedNotice(connector)
+        return
+    }
+    Body("Оберіть, які функції доступні цьому пристрою. Налаштування зберігаються окремо для кожного пристрою.")
+    Spacer(Modifier.height(16.dp))
+    DevicePlugin.entries.forEach { plugin ->
+        var enabled by remember(deviceId, plugin) { mutableStateOf(connector.isPluginEnabled(deviceId, plugin)) }
+        Row(
+            Modifier.fillMaxWidth()
+                .border(1.dp, LocalGlideColors.current.cardBorder, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(plugin.title, style = MaterialTheme.typography.titleMedium)
+                Text(plugin.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { connector.setPluginEnabled(deviceId, plugin, it); enabled = it },
+                modifier = Modifier.semantics { contentDescription = plugin.title }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}

@@ -109,6 +109,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     @Volatile private var udp: DatagramSocket? = null
     private val lastDial = ConcurrentHashMap<String, Long>()
     private val networkSettings = NetworkSettings(context)
+    private val plugins = DevicePluginSettings(context)
     @Volatile private var customAddresses: Set<InetAddress> = emptySet()
 
     /** Same rule as LanLinkProvider.isAllowedAddress. */
@@ -553,6 +554,14 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
 
     fun decide(id: String, accepted: Boolean) { pending[id]?.session?.decide(accepted) }
 
+    fun isPluginEnabled(deviceId: String, plugin: DevicePlugin) = plugins.isEnabled(deviceId, plugin)
+
+    fun setPluginEnabled(deviceId: String, plugin: DevicePlugin, enabled: Boolean) {
+        plugins.setEnabled(deviceId, plugin, enabled)
+        // Re-run the plugin's onCreate requests (e.g. ask for notifications) right away.
+        if (enabled) connections[deviceId]?.let(::greetPeer)
+    }
+
     /** Abort any pairing attempt in progress (links stay open). */
     fun cancel() {
         generation.incrementAndGet()
@@ -570,6 +579,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     val identity = LocalIdentity().loadOrCreate()
                     TrustedPeerStore(app).remove(id, identity.id, connection.pending.certificate)
                 }
+                runCatching { plugins.clear(id) }
                 runCatching { connection.pending.socket.close() }
             }
         } catch (_: RejectedExecutionException) {
@@ -586,7 +596,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val preferences = SetupPreferences(app)
         val connection = TrustedConnection(
             handshake, identity, trusted,
-            batteryEnabled = { FeatureId.BATTERY.key in preferences.selectedFeatures() },
+            batteryEnabled = {
+                FeatureId.BATTERY.key in preferences.selectedFeatures() && plugins.isEnabled(id, DevicePlugin.BATTERY)
+            },
             readBattery = {
                 app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                     ?.let(BatterySnapshot::fromIntent)
@@ -617,23 +629,29 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     /** Initial state exchange right after a trusted connection comes up. */
     private fun greetPeer(connection: TrustedConnection) {
         runCatching { MediaControl.start(app) { packet -> broadcastPacket(packet) } }
+        val id = connection.pending.peer.id
+        // Each plugin's onCreate: only plugins enabled for this device speak up.
+        fun send(packet: String) {
+            val type = runCatching { JSONObject(packet).optString("type") }.getOrNull() ?: return
+            if (plugins.allowsSending(id, type)) connection.send(packet)
+        }
         enqueue {
             val features = SetupPreferences(app).selectedFeatures()
-            connection.send(ProtocolPackets.runCommandRequestList())
-            connection.send(ProtocolPackets.mprisRequest(JSONObject().put("requestPlayerList", true)))
-            connection.send(ProtocolPackets.systemVolumeRequest(JSONObject().put("requestSinks", true)))
-            // Ask the computer for its current notifications (receivenotifications plugin).
-            connection.send(JSONObject().put("id", System.currentTimeMillis())
+            send(ProtocolPackets.runCommandRequestList())
+            send(ProtocolPackets.mprisRequest(JSONObject().put("requestPlayerList", true)))
+            send(ProtocolPackets.systemVolumeRequest(JSONObject().put("requestSinks", true)))
+            // receivenotifications asks for the computer's current notifications.
+            send(JSONObject().put("id", System.currentTimeMillis())
                 .put("type", ProtocolPackets.TYPE_NOTIFICATION_REQUEST)
                 .put("body", JSONObject().put("request", true)).toString() + "\n")
-            runCatching { ConnectivityReporter.reportPacket(app)?.let { connection.send(it) } }
-            runCatching { connection.send(MediaControl.playerListPacket(app)) }
-            runCatching { MediaControl.statePacket(app)?.let { connection.send(it) } }
+            runCatching { ConnectivityReporter.reportPacket(app)?.let(::send) }
+            runCatching { send(MediaControl.playerListPacket(app)) }
+            runCatching { MediaControl.statePacket(app)?.let(::send) }
             if (FeatureId.CLIPBOARD.key in features) {
                 val content = lastClipboardSeen
                 if (!content.isNullOrEmpty() && lastClipboardTime > 0 &&
                     !(lastClipboardSensitive && SetupPreferences(app).skipSensitiveClipboard)) {
-                    connection.send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
+                    send(ProtocolPackets.clipboardConnect(content, lastClipboardTime))
                 }
             }
         }
@@ -659,6 +677,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     // ---- Incoming packet handling ----
 
     private fun handleIncomingPacket(peerId: String, peerName: String, type: String, body: JSONObject) {
+        if (!plugins.accepts(peerId, type)) return // no enabled plugin of this device handles it
         val features = SetupPreferences(app).selectedFeatures()
         when (type) {
             ProtocolPackets.TYPE_FINDMYPHONE_REQUEST -> {
@@ -985,6 +1004,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         val connection = (if (deviceId != null) connections[deviceId] else targetConnection()) ?: return false
         val packetType = runCatching { JSONObject(packetJson).optString("type") }.getOrNull() ?: return false
         if (packetType !in connection.pending.peer.incomingCapabilities) return false
+        if (!plugins.allowsSending(connection.pending.peer.id, packetType)) return false
         if (packetType == ProtocolPackets.TYPE_NOTIFICATION &&
             (FeatureId.NOTIFICATIONS.key !in SetupPreferences(app).selectedFeatures() ||
                 app.packageName !in androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(app))) return false
@@ -1162,6 +1182,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         if (uris.isEmpty()) return false
         val connection = (if (deviceId != null) connections[deviceId] else targetConnection()) ?: return false
         if (ProtocolPackets.TYPE_SHARE_REQUEST !in connection.pending.peer.incomingCapabilities) return false
+        if (!plugins.allowsSending(connection.pending.peer.id, ProtocolPackets.TYPE_SHARE_REQUEST)) return false
         // Open every stream now: a URI grant from a share intent ends with the activity
         // that received it, so reading later from a background thread could be refused.
         val resolver = app.contentResolver

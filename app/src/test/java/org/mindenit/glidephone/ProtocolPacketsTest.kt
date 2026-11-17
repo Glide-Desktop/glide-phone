@@ -246,4 +246,18 @@ class ProtocolPacketsTest {
         assertEquals(ProtocolPackets.TYPE_RUNCOMMAND_REQUEST, JSONObject(ProtocolPackets.runCommandStop()).getString("type"))
         assertTrue(ProtocolPackets.TYPE_RUNCOMMAND_OUTPUT in IdentityPacket.INCOMING)
     }
+
+    @Test
+    fun privateLanMatchesKdeConnectRule() {
+        fun ip(s: String) = java.net.InetAddress.getByName(s)
+        assertTrue(ip("192.168.1.5").isPrivateLan())
+        assertTrue(ip("10.0.0.1").isPrivateLan())
+        assertTrue(ip("100.101.102.103").isPrivateLan()) // CGNAT / Tailscale
+        assertFalse(ip("100.128.0.1").isPrivateLan())
+        assertTrue(ip("fd12:3456::1").isPrivateLan()) // ULA
+        assertFalse(ip("8.8.8.8").isPrivateLan())
+        assertTrue(NetworkSettings.isValidHost("192.168.1.20"))
+        assertTrue(NetworkSettings.isValidHost("my-pc.local"))
+        assertFalse(NetworkSettings.isValidHost("bad host"))
+    }
 }

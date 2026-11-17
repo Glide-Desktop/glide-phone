@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Speaker
 import androidx.compose.material.icons.outlined.Draw
@@ -129,6 +130,7 @@ internal enum class Detail(val title: String, val icon: ImageVector) {
     MEDIA("Керування медіа", Icons.Outlined.PlayCircle),
     VOLUME("Гучність комп’ютера", Icons.Outlined.Speaker),
     DIGITIZER("Графічний планшет", Icons.Outlined.Draw),
+    NETWORK("Мережа", Icons.Outlined.Lan),
     SETTINGS("Можливості", Icons.Outlined.Tune),
     PRIVACY("Приватність", Icons.Outlined.Shield),
     ABOUT("Про застосунок", Icons.Outlined.Info)
@@ -899,6 +901,7 @@ private fun MeScreen(deviceName: String, onRename: (String) -> Unit, onDetail: (
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FeatureNavRow(Icons.Outlined.Tune, "Можливості", "Вибір функцій для підключення") { onDetail(Detail.SETTINGS) }
             FeatureNavRow(Icons.Outlined.PhonelinkRing, "Телефонія, контакти та SMS", "Надати доступ для синхронізації з комп’ютером", trailing = Icons.AutoMirrored.Outlined.KeyboardArrowRight) { onAdvanced() }
+            FeatureNavRow(Icons.Outlined.Lan, "Мережа", "Пристрої за адресою та довірені мережі") { onDetail(Detail.NETWORK) }
             FeatureNavRow(Icons.Outlined.Shield, "Приватність", "Дозволи та доступ до даних") { onDetail(Detail.PRIVACY) }
             FeatureNavRow(Icons.Outlined.Info, "Про застосунок", "Інформація про Glide Phone") { onDetail(Detail.ABOUT) }
         }
@@ -952,6 +955,7 @@ private fun DetailScreen(
                 Detail.MEDIA -> MediaDetail(connector, deviceId)
                 Detail.VOLUME -> VolumeDetail(connector, deviceId)
                 Detail.DIGITIZER -> DigitizerDetail(connector)
+                Detail.NETWORK -> NetworkDetail(connector)
                 Detail.RING -> RingDetail(context, connector, isRinging, onStopAlarm, selectedFeatures, onFeatureChange)
                 Detail.CLIPBOARD -> ClipboardDetail(context, connector, lastClipboard, selectedFeatures, onFeatureChange)
                 Detail.FILES -> FilesDetail(connector, lastShare, selectedFeatures, onFeatureChange)

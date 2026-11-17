@@ -82,7 +82,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                         socket.receive(packet)
                         val text = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
                         val peer = IdentityPacket.decode(text)
-                        if (peer != null && peer.id != selfId && (packet.address.isSiteLocalAddress || packet.address.isLinkLocalAddress) && (peer.tcpPort == null || peer.tcpPort in 1716..1764)) {
+                        if (peer != null && peer.id != selfId && packet.address.isPrivateLan() && (peer.tcpPort == null || peer.tcpPort in 1716..1764)) {
                             val host = packet.address.hostAddress ?: ""
                             val port = peer.tcpPort ?: 1716
                             val candidate = Candidate(peer.id, peer.name, host, port, peer.version)
@@ -198,7 +198,7 @@ internal class NearbyDiscovery(context: Context, private val onUpdate: (Set<Stri
                         val name = attrs["name"]?.toString(Charsets.UTF_8)
                             ?.filterNot { it.isISOControl() }?.trim()?.take(64)
                         val version = attrs["protocol"]?.toString(Charsets.UTF_8)?.toIntOrNull()
-                        val isLocal = address != null && (address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)
+                        val isLocal = address != null && address.isPrivateLan()
                         val candidate = if (id in services && serviceInfo.serviceName == id &&
                             (advertisedId == null || advertisedId == id) && isLocal &&
                             serviceInfo.port in 1716..1764) {

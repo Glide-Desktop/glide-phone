@@ -102,6 +102,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     @Volatile private var server: ServerSocket? = null
     @Volatile private var udp: DatagramSocket? = null
     private val lastDial = ConcurrentHashMap<String, Long>()
+    private val networkSettings = NetworkSettings(context)
+    @Volatile private var customAddresses: Set<InetAddress> = emptySet()
+
+    /** Same rule as LanLinkProvider.isAllowedAddress. */
+    private fun allowed(address: InetAddress) = address.isPrivateLan() || address in customAddresses
+
     private val mdns = LanMdns(
         context,
         identity = { runCatching { LocalIdentity().loadOrCreate().id to deviceName }.getOrNull() },
@@ -130,8 +136,12 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 broadcastNow()
                 io.runCatching {
                     execute {
-                        server?.takeIf { !it.isClosed }?.let { mdns.startAnnouncing(it.localPort) }
-                        mdns.rediscover()
+                        if (networkSettings.isTrustedNetwork) {
+                            server?.takeIf { !it.isClosed }?.let { mdns.startAnnouncing(it.localPort) }
+                            mdns.rediscover()
+                        } else {
+                            mdns.stop()
+                        }
                     }
                 }
             }, 2_000)
@@ -228,6 +238,19 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         if (advertising.get()) runCatching { TelephonyReporter.start(app) { packet -> broadcastPacket(packet) } }
     }
 
+    /** Apply changed network settings (custom hosts, trusted networks). */
+    fun networkSettingsChanged() {
+        if (!advertising.get()) return
+        broadcastNow()
+        try {
+            io.execute {
+                val port = server?.takeIf { !it.isClosed }?.localPort ?: return@execute
+                if (networkSettings.isTrustedNetwork) { mdns.startAnnouncing(port); mdns.rediscover() } else mdns.stop()
+            }
+        } catch (_: RejectedExecutionException) {
+        }
+    }
+
     /** Re-broadcast immediately (e.g. when the user opens the devices screen). */
     fun refreshAdvertise() {
         if (advertising.get()) broadcastNow()
@@ -243,8 +266,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     Thread({ acceptLoop(listener) }, "GlideServer-Accept").apply { isDaemon = true; start() }
                     first = true
                     mdns.stopAnnouncing()
-                    mdns.startAnnouncing(listener.localPort)
-                    mdns.startDiscovering()
+                    if (networkSettings.isTrustedNetwork) {
+                        mdns.startAnnouncing(listener.localPort)
+                        mdns.startDiscovering()
+                    }
                 }
             }
             if (udp?.isClosed != false) {
@@ -284,9 +309,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     private fun handleIncoming(socket: Socket) {
         try {
             val address = socket.inetAddress
-            if (!(address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)) {
-                socket.close(); return
-            }
+            if (!allowed(address)) { socket.close(); return }
             val identity = LocalIdentity().loadOrCreate()
             val trusted = TrustedPeerStore(app)
             val handshake = IncomingHandshake.open(socket, identity, deviceName, null) { trusted.certificate(it, identity.id) }
@@ -305,11 +328,15 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 val packet = DatagramPacket(buffer, buffer.size)
                 socket.receive(packet)
                 val address = packet.address
-                if (!(address.isSiteLocalAddress || address.isLinkLocalAddress)) continue
+                if (!allowed(address)) continue
                 if (rateLimited(address)) continue
                 val peer = IdentityPacket.decode(String(packet.data, packet.offset, packet.length, Charsets.UTF_8)) ?: continue
                 if (peer.id == selfId || peer.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION) continue
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
+                // On an untrusted network only already paired devices may connect.
+                if (!networkSettings.isTrustedNetwork && runCatching {
+                        TrustedPeerStore(app).certificate(peer.id, LocalIdentity().loadOrCreate().id)
+                    }.getOrNull() == null) continue
                 val now = android.os.SystemClock.elapsedRealtime()
                 val last = lastDial[peer.id]
                 if (last != null && now - last < DIAL_INTERVAL_MS) continue
@@ -351,6 +378,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             if (handshake.previouslyPinned && trusted.protocolVersion(id) > handshake.peer.version) {
                 handshake.socket.close(); return
             }
+            if (!handshake.previouslyPinned && !networkSettings.isTrustedNetwork) {
+                handshake.socket.close(); return
+            }
             if (!handshake.previouslyPinned && !pending.containsKey(id) && pending.size >= MAX_UNPAIRED_CONNECTIONS) {
                 handshake.socket.close(); return
             }
@@ -388,9 +418,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 runCatching {
                     val identity = LocalIdentity().loadOrCreate()
                     val bytes = IdentityPacket.encode(identity.id, deviceName, port).toByteArray(Charsets.UTF_8)
+                    val custom = networkSettings.resolveCustomDevices()
+                    customAddresses = custom.toSet()
+                    // Broadcast only on a trusted network; manually added hosts always get a copy.
+                    val targets = (if (networkSettings.isTrustedNetwork) broadcastTargets() else emptyList()) + custom
                     DatagramSocket().use { udp ->
                         udp.broadcast = true
-                        broadcastTargets().forEach { addr ->
+                        targets.forEach { addr ->
                             runCatching { udp.send(DatagramPacket(bytes, bytes.size, addr, 1716)) }
                         }
                     }
@@ -449,7 +483,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             io.execute {
                 runCatching {
                     val address = InetAddress.getByName(candidate.host)
-                    check(address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)
+                    check(allowed(address))
                     // We know where the device listens, so open the link ourselves; only fall
                     // back to announcing (and waiting for it to call back) if that fails.
                     val dialed = runCatching {

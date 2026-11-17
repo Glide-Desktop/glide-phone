@@ -9,13 +9,15 @@ internal class PairingState(
     val timestampSeconds: Long,
     startedAtMillis: Long,
     localKey: ByteArray,
-    remoteKey: ByteArray
+    remoteKey: ByteArray,
+    legacy: Boolean = false
 ) {
     enum class Status { WAITING, CONFIRMED, REJECTED, EXPIRED }
 
     private val localKeyBytes = localKey.copyOf()
     private val remoteKeyBytes = remoteKey.copyOf()
-    val verificationCode = PairingVerification.code(localKeyBytes, remoteKeyBytes, timestampSeconds)
+    val verificationCode = if (legacy) PairingVerification.codeV7(localKeyBytes, remoteKeyBytes)
+        else PairingVerification.code(localKeyBytes, remoteKeyBytes, timestampSeconds)
     private val deadline = startedAtMillis + TIMEOUT_MILLIS
     private var localConfirmed = false
     private var remoteConfirmed = false

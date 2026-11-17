@@ -271,6 +271,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             } catch (_: Exception) {
                 if (listener.isClosed) break else continue
             }
+            if (rateLimited(socket.inetAddress)) { runCatching { socket.close() }; continue }
             try {
                 io.execute { handleIncoming(socket) }
             } catch (_: RejectedExecutionException) {
@@ -305,8 +306,9 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 socket.receive(packet)
                 val address = packet.address
                 if (!(address.isSiteLocalAddress || address.isLinkLocalAddress)) continue
+                if (rateLimited(address)) continue
                 val peer = IdentityPacket.decode(String(packet.data, packet.offset, packet.length, Charsets.UTF_8)) ?: continue
-                if (peer.id == selfId || peer.version != IdentityPacket.VERSION) continue
+                if (peer.id == selfId || peer.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION) continue
                 if (connections.containsKey(peer.id) || pending.containsKey(peer.id)) continue
                 val now = android.os.SystemClock.elapsedRealtime()
                 val last = lastDial[peer.id]
@@ -328,11 +330,30 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         }
     }
 
+    private val lastByIp = ConcurrentHashMap<InetAddress, Long>()
+
+    /** KDE Connect's rateLimitByIp: at most one connection attempt per address per second. */
+    private fun rateLimited(address: InetAddress): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastByIp[address]
+        if (last != null && now - last < RATE_LIMIT_MS) return true
+        lastByIp[address] = now
+        if (lastByIp.size > 255) lastByIp.entries.removeIf { now - it.value > RATE_LIMIT_MS }
+        return false
+    }
+
     /** Owns a freshly secured link until it closes: pair if needed, then run it. */
     private fun adopt(handshake: IncomingHandshake.Pending, identity: LocalIdentity.Identity, trusted: TrustedPeerStore) {
         try {
             val id = handshake.peer.id
             if (id == identity.id) { handshake.socket.close(); return }
+            // A trusted device must never come back speaking an older protocol.
+            if (handshake.previouslyPinned && trusted.protocolVersion(id) > handshake.peer.version) {
+                handshake.socket.close(); return
+            }
+            if (!handshake.previouslyPinned && !pending.containsKey(id) && pending.size >= MAX_UNPAIRED_CONNECTIONS) {
+                handshake.socket.close(); return
+            }
 
             if (!handshake.previouslyPinned) {
                 // Never let a duplicate link interrupt a verification the user is looking at.
@@ -353,6 +374,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     emit(Event.PeersChanged)
                 }
             }
+            runCatching { trusted.recordProtocolVersion(id, handshake.peer.version) }
             maintainConnection(handshake, trusted, identity)
         } catch (_: Exception) {
             runCatching { handshake.socket.close() }
@@ -1072,6 +1094,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val BROADCAST_INTERVAL_MS = 15_000L
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
+        const val RATE_LIMIT_MS = 1_000L
+        const val MAX_UNPAIRED_CONNECTIONS = 42
         const val PAYLOAD_TIMEOUT_MS = 60L * 60 * 1000
     }
 }

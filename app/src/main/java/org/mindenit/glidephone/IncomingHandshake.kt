@@ -29,7 +29,7 @@ internal object IncomingHandshake {
             socket.soTimeout = TIMEOUT_MS
             val firstLine = readLine(socket)
             val first = IdentityPacket.decode(firstLine) ?: throw IOException("Invalid identity")
-            if (first.version != IdentityPacket.VERSION || first.id == identity.id ||
+            if (first.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION || first.id == identity.id ||
                 (expectedPeerId != null && first.id != expectedPeerId)) {
                 throw IOException("Unsupported or self identity")
             }
@@ -42,8 +42,9 @@ internal object IncomingHandshake {
                 throw IOException("Wrong protocol version")
             }
 
-            secure = secureSocket(socket, identity, first.id, clientMode = true, trustedCertificateFor(first.id))
-            return exchangeIdentity(secure, identity, deviceName, first, trustedCertificateFor(first.id) != null)
+            val pinned = trustedCertificateFor(first.id)
+            secure = secureSocket(socket, identity, first.id, clientMode = true, pinned)
+            return exchangeIdentity(secure, identity, deviceName, first, pinned != null)
         } catch (error: Exception) {
             runCatching { secure?.close() ?: socket.close() }
             if (error is IOException) throw error
@@ -57,7 +58,9 @@ internal object IncomingHandshake {
      */
     @Throws(IOException::class)
     fun connect(peer: IdentityPacket.Peer, address: java.net.InetAddress, identity: LocalIdentity.Identity, deviceName: String, trustedCertificateFor: (String) -> X509Certificate?): Pending {
-        if (peer.version != IdentityPacket.VERSION || peer.id == identity.id) throw IOException("Unsupported or self identity")
+        if (peer.version !in IdentityPacket.MIN_VERSION..IdentityPacket.VERSION || peer.id == identity.id) {
+            throw IOException("Unsupported or self identity")
+        }
         val socket = Socket()
         var secure: SSLSocket? = null
         try {
@@ -96,6 +99,8 @@ internal object IncomingHandshake {
     private fun exchangeIdentity(secure: SSLSocket, identity: LocalIdentity.Identity, deviceName: String, first: IdentityPacket.Peer, pinned: Boolean): Pending {
         val certificate = secure.session.peerCertificates.firstOrNull() as? X509Certificate
             ?: throw IOException("Missing peer certificate")
+        // Protocol v7 peers do not repeat the identity inside TLS.
+        if (first.version < 8) return Pending(secure, first, certificate, pinned)
         secure.outputStream.write(IdentityPacket.encode(identity.id, deviceName).toByteArray(Charsets.UTF_8))
         secure.outputStream.flush()
         val verified = IdentityPacket.decode(readLine(secure)) ?: throw IOException("Invalid encrypted identity")

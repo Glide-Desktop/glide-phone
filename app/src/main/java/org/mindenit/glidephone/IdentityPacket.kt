@@ -9,6 +9,8 @@ import org.json.JSONObject
  */
 internal object IdentityPacket {
     const val VERSION = 8
+    /** Oldest protocol version accepted from peers (KDE Connect still talks to v7). */
+    const val MIN_VERSION = 7
     private const val TYPE = "kdeconnect.identity"
     private val validId = Regex("^[a-zA-Z0-9_-]{32,38}$")
     private val invalidName = Regex("[\\\"',;:.!?()\\[\\]<>]")

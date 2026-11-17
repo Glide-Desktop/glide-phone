@@ -97,9 +97,10 @@ internal class PairingSession(
                 val active = state
                 val at = SystemClock.elapsedRealtime()
                 if (active == null) {
-                    val timestamp = message.timestampSeconds
+                    // v7 peers send no timestamp (their code ignores it); v8 peers must.
+                    val timestamp = message.timestampSeconds ?: if (legacy) 0L else null
                     val nowSeconds = System.currentTimeMillis() / 1000
-                    if (message.accepted && timestamp != null &&
+                    if (message.accepted && timestamp != null && !legacy &&
                         kotlin.math.abs(nowSeconds - timestamp) > MAX_CLOCK_SKEW_SECONDS) {
                         // Same guard as KDE Connect: a stale or future timestamp is refused.
                         runCatching { write(PairingPacket.response(false)) }
@@ -128,8 +129,10 @@ internal class PairingSession(
         }
     }
 
+    private val legacy = pending.peer.version < 8
+
     private fun newState(timestamp: Long, now: Long) = PairingState(
-        timestamp, now, identity.certificate.publicKey.encoded, pending.certificate.publicKey.encoded
+        timestamp, now, identity.certificate.publicKey.encoded, pending.certificate.publicKey.encoded, legacy
     )
 
     private fun write(packet: String) {

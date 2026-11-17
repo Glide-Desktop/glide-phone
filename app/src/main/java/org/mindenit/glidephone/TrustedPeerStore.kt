@@ -51,6 +51,19 @@ internal class TrustedPeerStore(context: Context, filename: String = "trusted-pe
         write(records)
     }
 
+    /** Last protocol version seen from a trusted peer (0 if unknown). */
+    fun protocolVersion(peerId: String): Int = synchronized(lock) {
+        read().optJSONObject(peerId)?.optInt("protocolVersion", 0) ?: 0
+    }
+
+    fun recordProtocolVersion(peerId: String, version: Int) = synchronized(lock) {
+        val records = read()
+        val record = records.optJSONObject(peerId) ?: return@synchronized
+        if (record.optInt("protocolVersion", 0) == version) return@synchronized
+        record.put("protocolVersion", version)
+        write(records)
+    }
+
     fun remove(peerId: String, localId: String, certificate: X509Certificate) = synchronized(lock) {
         val records = read()
         val existing = records.optJSONObject(peerId) ?: return@synchronized

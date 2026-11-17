@@ -23,6 +23,18 @@ internal object PairingVerification {
         }
     }
 
+    /** Protocol v7 verification key: the same hash without the timestamp. */
+    fun codeV7(publicKeyA: ByteArray, publicKeyB: ByteArray): String {
+        require(publicKeyA.isNotEmpty() && publicKeyB.isNotEmpty())
+        val digest = MessageDigest.getInstance("SHA-256")
+        if (compareUnsigned(publicKeyA, publicKeyB) >= 0) {
+            digest.update(publicKeyA); digest.update(publicKeyB)
+        } else {
+            digest.update(publicKeyB); digest.update(publicKeyA)
+        }
+        return digest.digest().take(4).joinToString("") { "%02X".format(Locale.ROOT, it.toInt() and 0xff) }
+    }
+
     /**
      * Matches Glide Phone's short_verification_code: first 8 hex characters (uppercase)
      * of the peer's SHA-256 certificate fingerprint.

@@ -86,6 +86,7 @@ internal object IdentityPacket {
     /** Packet types this phone understands. */
     val INCOMING = listOf(
         ProtocolPackets.TYPE_BATTERY,
+        ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST,
         ProtocolPackets.TYPE_CLIPBOARD,
         ProtocolPackets.TYPE_CLIPBOARD_CONNECT,
         ProtocolPackets.TYPE_FINDMYPHONE_REQUEST,
@@ -134,6 +135,7 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_MPRIS,
         ProtocolPackets.TYPE_MPRIS_REQUEST,
         ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST,
+        ProtocolPackets.TYPE_SYSTEMVOLUME,
         ProtocolPackets.TYPE_TELEPHONY,
         ProtocolPackets.TYPE_CONTACTS_RESPONSE_UIDS,
         ProtocolPackets.TYPE_CONTACTS_RESPONSE_VCARDS,

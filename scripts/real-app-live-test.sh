@@ -136,6 +136,29 @@ for n in json.load(sys.stdin)[0]['notifications']:
 [ -n "$icon" ] || fail "the notification arrived without the contact's picture"
 echo "avatar shown: $icon"
 
+# Glide only: the computer sets the phone's own volume, and the phone's buttons show up there.
+media_volume() { busctl --json=short --address="$(cat "$work/bus")" call org.glide.Phone /org/glide/Phone org.glide.Phone \
+  ListPhoneVolumesJson | python3 -c "
+import json,sys
+for s in json.loads(json.load(sys.stdin)['data'][0]).get(sys.argv[1], []):
+    if s['name'] == 'phone.media': print(s['volume'])" "$phone"; }
+for _ in $(seq 20); do [ -n "$(media_volume)" ] && break; sleep 0.5; done
+[ -n "$(media_volume)" ] || fail "the phone's volumes didn't arrive"
+call SetPhoneVolume ssi "$phone" phone.media 20 >/dev/null
+sleep 1.5
+index="$($adb shell cmd media_session volume --stream 3 --get | grep -o 'volume is [0-9]*' | grep -o '[0-9]*$')"
+[ "$index" = 3 ] || fail "media volume on the phone is $index, expected 3 of 15 (20%)"
+before="$(media_volume)"
+# The phone's volume button (the first press only shows the volume panel).
+for _ in 1 2 3; do $adb shell input keyevent KEYCODE_VOLUME_UP; sleep 0.5; done
+for _ in $(seq 20); do [ "$(media_volume)" != "$before" ] && break; sleep 0.5; done
+if [ "$(media_volume)" = "$before" ]; then
+  echo "computer: $before; phone: $($adb shell cmd media_session volume --stream 3 --get | grep -o 'volume is [0-9]*')"
+  $adb logcat -d -s GlideLink | tail -4
+  fail "the phone's volume button didn't show up on the computer"
+fi
+echo "phone volume: set to 20% from the computer, the phone's button seen there ($before -> $(media_volume))"
+
 # The computer's cursor goes over to the phone at the right edge and comes back.
 [ "$(call SetShareInputEdge s right)" = "b true" ] || fail "the edge strip can't be shown"
 sleep 1

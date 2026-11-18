@@ -755,6 +755,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     /** Initial state exchange right after a trusted connection comes up. */
     private fun greetPeer(connection: TrustedConnection) {
         runCatching { MediaControl.start(app) { packet -> broadcastPacket(packet) } }
+        runCatching { PhoneVolume.start(app) { packet -> broadcastPacket(packet) } }
         DevicePlugin.entries.forEach { plugin -> pluginCreated(connection, plugin) }
     }
 
@@ -780,6 +781,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                     MediaControl.statePacket(app)?.let(::send)
                 }
                 DevicePlugin.SFTP -> send(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
+                DevicePlugin.VOLUME_RECEIVER -> runCatching { PhoneVolume.sinkListPacket(app)?.let(::send) }
                 DevicePlugin.SHARE -> if (ProtocolPackets.TYPE_SHARE_REQUEST in connection.pending.peer.incomingCapabilities) deliverQueuedUrls(id)
                 DevicePlugin.REMOTE_KEYBOARD -> if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
                 DevicePlugin.NOTIFICATIONS -> NotificationBridge.refresh()
@@ -918,6 +920,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 }?.let { sendPacketTo(peerId, it) }
             }
             ProtocolPackets.TYPE_SYSTEMVOLUME -> handleVolume(peerId, body)
+            ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST -> PhoneVolume.handle(app, body)?.let { sendPacketTo(peerId, it) }
             ProtocolPackets.TYPE_CONTACTS_REQUEST_UIDS -> {
                 sendPacketTo(peerId, ProtocolPackets.contactsUids(ContactsProvider.uidTimestamps(app)))
             }

@@ -207,7 +207,9 @@ class ProtocolPacketsTest {
         // and *receive* state, not the other way round.
         assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME in IdentityPacket.INCOMING)
         assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST in IdentityPacket.OUTGOING)
-        assertFalse(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST in IdentityPacket.INCOMING)
+        // Glide only: the computer also sets the phone's own volumes (PhoneVolume).
+        assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST in IdentityPacket.INCOMING)
+        assertTrue(ProtocolPackets.TYPE_SYSTEMVOLUME in IdentityPacket.OUTGOING)
         assertTrue(ProtocolPackets.TYPE_MPRIS in IdentityPacket.INCOMING)
         assertTrue(ProtocolPackets.TYPE_MPRIS_REQUEST in IdentityPacket.OUTGOING)
         val body = JSONObject(IdentityPacket.encode("a".repeat(36), "Phone", 1716)).getJSONObject("body")

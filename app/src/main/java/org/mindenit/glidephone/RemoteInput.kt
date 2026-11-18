@@ -92,6 +92,7 @@ internal object RemoteInput {
         enterEdge = body.optInt("exitEdge", NONE)
         val dx = body.optInt("deltax")
         val dy = body.optInt("deltay")
+        android.util.Log.i("GlideLink", "the computer's cursor came in (edge $enterEdge at $dx,$dy)")
         when (enterEdge) {
             TOP -> service.setPos(dx, 1)
             LEFT -> service.setPos(1, dy)
@@ -109,6 +110,7 @@ internal object RemoteInput {
             else -> null
         } ?: return
         enterEdge = NONE
+        android.util.Log.i("GlideLink", "giving the cursor back at ${back.first},${back.second}")
         release(back.first, back.second)
     }
 }

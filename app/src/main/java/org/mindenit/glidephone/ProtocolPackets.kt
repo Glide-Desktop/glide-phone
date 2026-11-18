@@ -17,6 +17,15 @@ internal object ProtocolPackets {
 
     /** The desktop's network card addresses, for Wake-on-LAN. */
     const val TYPE_GLIDE_WOL = "glide.wol"
+    /** Glide only: the computer's home folder, browsed from the phone. */
+    const val TYPE_GLIDE_FILES = "glide.files"
+    const val TYPE_GLIDE_FILES_REQUEST = "glide.files.request"
+
+    fun computerFilesRequest(path: String, fetch: Boolean): String = JSONObject()
+        .put("id", System.currentTimeMillis())
+        .put("type", TYPE_GLIDE_FILES_REQUEST)
+        .put("body", JSONObject().put("path", path).apply { if (fetch) put("fetch", true) })
+        .toString() + "\n"
     const val TYPE_CLIPBOARD = "kdeconnect.clipboard"
     const val TYPE_CLIPBOARD_CONNECT = "kdeconnect.clipboard.connect"
     const val TYPE_PRESENTER = "kdeconnect.presenter"

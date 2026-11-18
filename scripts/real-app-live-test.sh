@@ -60,8 +60,10 @@ $adb shell monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&
 wait_ui '^Почати$' tap || fail "no onboarding"
 
 # The desktop, in its own D-Bus session.
-mkdir -p "$work/config" "$work/data"
-RUST_LOG=glide_phone=info XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" setsid dbus-run-session -- \
+mkdir -p "$work/config" "$work/data" "$work/home/Документи"
+echo "glide computer file $$" > "$work/home/Документи/glide-computer-file.txt"
+# Its own home folder, so the phone browses test files, not the user's.
+RUST_LOG=glide_phone=info HOME="$work/home" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" setsid dbus-run-session -- \
   bash -c "echo \$DBUS_SESSION_BUS_ADDRESS > '$work/bus'; exec '$bin' --daemon" > "$work/daemon.log" 2>&1 &
 for _ in $(seq 50); do [ -s "$work/bus" ] && [ -s "$work/config/glide/phone.json" ] && break; sleep 0.2; done
 sleep 2
@@ -106,7 +108,7 @@ for _ in $(seq 20); do [ "$(field "['pair_state']")" = Paired ] && break; sleep 
 phone="$(field "['id']")"
 echo "paired with $phone"
 wait_ui '^Готово$' tap || true
-for _ in 1 2 3; do ui '^(Далі|Готово|Пропустити)$' tap || true; sleep 1.5; done
+for _ in 1 2 3 4; do ui '^(Далі|Готово|Пропустити|Завершити)$' tap || true; sleep 1.5; done
 connect
 echo "connected as a trusted device"
 
@@ -158,6 +160,20 @@ if [ "$(media_volume)" = "$before" ]; then
   fail "the phone's volume button didn't show up on the computer"
 fi
 echo "phone volume: set to 20% from the computer, the phone's button seen there ($before -> $(media_volume))"
+
+# Glide only: the phone browses this computer's files (once allowed) and downloads one.
+ui '^Файли$' tap || fail "no Files screen"
+wait_ui '^Переглянути файли комп’ютера$' tap || fail "no computer files button"
+wait_ui '^Вимкнено на комп’ютері$' || fail "the computer didn't say it's off"
+call SetComputerFilesAllowed b true >/dev/null
+ui '^Спробувати ще$' tap
+wait_ui '^Документи$' tap || fail "the computer's folders aren't listed"
+wait_ui '^glide-computer-file.txt$' tap || fail "the file isn't listed"
+for _ in $(seq 30); do $adb shell cat /sdcard/Download/glide-computer-file.txt 2>/dev/null | grep -q "glide computer file $$" && break; sleep 0.5; done
+$adb shell cat /sdcard/Download/glide-computer-file.txt 2>/dev/null | grep -q "glide computer file $$" || fail "the computer's file didn't arrive"
+$adb shell rm -f /sdcard/Download/glide-computer-file.txt
+$adb shell input keyevent KEYCODE_BACK
+echo "computer files: refused while off, then browsed and a file downloaded"
 
 # The computer's cursor goes over to the phone at the right edge and comes back.
 [ "$(call SetShareInputEdge s right)" = "b true" ] || fail "the edge strip can't be shown"

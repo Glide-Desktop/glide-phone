@@ -59,7 +59,9 @@ internal enum class DevicePlugin(
     TELEPHONY("Телефонія", "Сповіщення комп’ютера про дзвінки",
         setOf(P.TYPE_TELEPHONY_REQUEST_MUTE), setOf(P.TYPE_TELEPHONY)),
     WAKE_ON_LAN("Увімкнення комп’ютера", "Будити сплячий комп’ютер з телефона (лише Glide)",
-        setOf(P.TYPE_GLIDE_WOL), emptySet());
+        setOf(P.TYPE_GLIDE_WOL), emptySet()),
+    COMPUTER_FILES("Файли комп’ютера", "Перегляд і завантаження файлів комп’ютера (лише Glide)",
+        setOf(P.TYPE_GLIDE_FILES), setOf(P.TYPE_GLIDE_FILES_REQUEST));
 
     fun isEnabledByDefault(context: Context) = enabledByDefault(context)
 }

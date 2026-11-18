@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Laptop
@@ -1500,6 +1501,75 @@ private fun ColumnScope.ClipboardDetail(
     FeatureToggleRow(feature.icon, feature.title, feature.description, feature.id in selectedFeatures) { onFeatureChange(feature.id, it) }
 }
 
+/** Glide only: browse the computer's home folder and download files from it. */
+@Composable
+private fun ComputerFilesSection(connector: PairingConnector) {
+    val listing = GlideHub.computerFiles
+    var fetching by remember { mutableStateOf<String?>(null) }
+    SectionLabel("Файли комп’ютера")
+    Spacer(Modifier.height(8.dp))
+    if (listing == null) {
+        TonalButton("Переглянути файли комп’ютера", { connector.requestComputerFiles("") }, leadingIcon = Icons.Outlined.Folder)
+        return
+    }
+    when (listing.error) {
+        "off" -> {
+            InfoCard(Icons.Outlined.Info, "Вимкнено на комп’ютері",
+                "Увімкніть у Glide Phone на комп’ютері: «Керувати телефоном» → «Файли комп’ютера на телефоні».")
+            Spacer(Modifier.height(8.dp))
+            TonalButton("Спробувати ще", { connector.requestComputerFiles(listing.path) })
+            return
+        }
+        null -> Unit
+        else -> {
+            InfoCard(Icons.Outlined.Info, "Не вдалося відкрити", "Цієї теки немає або її не можна прочитати.")
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+    val path = listing.path
+    Text(if (path.isEmpty()) "~" else "~/$path", style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface)
+    Spacer(Modifier.height(8.dp))
+    Column(Modifier.fillMaxWidth().background(LocalGlideColors.current.tonal, RoundedCornerShape(18.dp)).padding(vertical = 6.dp)) {
+        if (path.isNotEmpty()) {
+            ComputerFileRow("..", "Вгору", Icons.Outlined.Folder) {
+                connector.requestComputerFiles(path.substringBeforeLast('/', ""))
+            }
+        }
+        listing.entries.forEach { entry ->
+            val child = if (path.isEmpty()) entry.name else "$path/${entry.name}"
+            if (entry.dir) {
+                ComputerFileRow(entry.name, "Тека", Icons.Outlined.Folder) { connector.requestComputerFiles(child) }
+            } else {
+                val subtitle = if (fetching == child) "Завантажується в «Завантаження»…"
+                    else android.text.format.Formatter.formatShortFileSize(LocalContext.current, entry.size)
+                ComputerFileRow(entry.name, subtitle, Icons.Outlined.Description) {
+                    if (connector.requestComputerFiles(child, fetch = true)) fetching = child
+                }
+            }
+        }
+        if (listing.entries.isEmpty()) {
+            Text("Порожня тека", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ComputerFileRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun ColumnScope.FilesDetail(
     connector: PairingConnector?,
@@ -1510,6 +1580,10 @@ private fun ColumnScope.FilesDetail(
     val context = LocalContext.current
     val feature = features.first { it.detail == Detail.FILES }
     var shareContent by rememberSaveable { mutableStateOf("") }
+    if (connector?.supportsComputerFiles == true) {
+        ComputerFilesSection(connector)
+        Spacer(Modifier.height(20.dp))
+    }
     Body("Відкривайте веб-посилання у браузері комп’ютера або надсилайте текстові нотатки.")
     Spacer(Modifier.height(16.dp))
     NotConnectedNotice(connector)

@@ -47,6 +47,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         data class PingReceived(val name: String, val message: String) : Event
         data class ShareReceived(val id: String, val text: String?, val url: String?) : Event
         data class FileReceived(val id: String, val fileName: String, val success: Boolean) : Event
+        /** A folder of the computer (Glide only); [error] is "off", "missing" or "unreadable". */
+        data class ComputerFiles(val id: String, val path: String, val entries: List<ComputerFile>, val error: String?) : Event
         data class CommandList(val id: String, val commands: List<RemoteCommand>, val canAddCommand: Boolean) : Event
         data class CommandOutput(val id: String, val line: CommandLine) : Event
         data class RemoteNotification(
@@ -218,6 +220,13 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
     val supportsNotifications: Boolean get() = targetSupports(ProtocolPackets.TYPE_NOTIFICATION)
     val supportsMedia: Boolean get() = targetSupports(ProtocolPackets.TYPE_MPRIS_REQUEST)
     val supportsVolume: Boolean get() = targetSupports(ProtocolPackets.TYPE_SYSTEMVOLUME_REQUEST)
+    val supportsComputerFiles: Boolean get() = targetSupports(ProtocolPackets.TYPE_GLIDE_FILES_REQUEST)
+
+    data class ComputerFile(val name: String, val dir: Boolean, val size: Long, val modified: Long)
+
+    /** Lists a folder of the computer, or ([fetch]) has it send that file like a share. */
+    fun requestComputerFiles(path: String, fetch: Boolean = false): Boolean =
+        sendPacket(ProtocolPackets.computerFilesRequest(path, fetch))
     val supportsDigitizer: Boolean get() = targetSupports(ProtocolPackets.TYPE_DIGITIZER)
     val supportsCommands: Boolean get() = targetSupports(ProtocolPackets.TYPE_RUNCOMMAND_REQUEST)
     val supportsMouse: Boolean get() = targetSupports(ProtocolPackets.TYPE_MOUSEPAD_REQUEST)
@@ -931,6 +940,16 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
+            ProtocolPackets.TYPE_GLIDE_FILES -> {
+                val list = body.optJSONArray("entries")
+                val entries = (0 until minOf(list?.length() ?: 0, 2000)).mapNotNull { i ->
+                    val e = list?.optJSONObject(i) ?: return@mapNotNull null
+                    val name = e.optString("name").takeIf { it.isNotBlank() && '/' !in it } ?: return@mapNotNull null
+                    ComputerFile(name.take(255), e.optBoolean("dir"), e.optLong("size"), e.optLong("modified"))
+                }
+                emit(Event.ComputerFiles(peerId, body.optString("path").take(4096), entries,
+                    body.optString("error").takeIf { it.isNotBlank() }))
+            }
             ProtocolPackets.TYPE_GLIDE_WOL -> {
                 val list = body.optJSONArray("macs")
                 val macs = (0 until (list?.length() ?: 0)).mapNotNull { list?.optString(it)?.takeIf(WakeOnLan::isMac) }.distinct().take(8)

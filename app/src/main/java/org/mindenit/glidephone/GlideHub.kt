@@ -29,6 +29,9 @@ internal object GlideHub {
         private set
     var lastFile by mutableStateOf<PairingConnector.Event.FileReceived?>(null)
         private set
+    /** The computer's folder last shown (Glide only). */
+    var computerFiles by mutableStateOf<PairingConnector.Event.ComputerFiles?>(null)
+        private set
     var peerBatteries by mutableStateOf<Map<String, Pair<Int, Boolean>>>(emptyMap())
         private set
     var remoteCommands by mutableStateOf<Map<String, List<PairingConnector.RemoteCommand>>>(emptyMap())
@@ -157,6 +160,7 @@ internal object GlideHub {
                     event.url ?: event.text.orEmpty()
                 )
             }
+            is PairingConnector.Event.ComputerFiles -> computerFiles = event
             is PairingConnector.Event.FileReceived -> {
                 lastFile = event
                 RemoteNotifications.post(

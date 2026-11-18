@@ -48,9 +48,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // R8 limited to androidx/kotlin made renamed Kotlin classes inaccessible to their
+            // subclasses (IllegalAccessError at start); whole-app R8 would strip what Apache
+            // SSHD loads by reflection. Unshrunk until SSHD has keep rules and an SFTP test.
             optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
+                enable = false
             }
         }
     }

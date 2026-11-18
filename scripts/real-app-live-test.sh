@@ -60,10 +60,10 @@ $adb shell monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&
 wait_ui '^Почати$' tap || fail "no onboarding"
 
 # The desktop, in its own D-Bus session.
-mkdir -p "$work/config" "$work/data" "$work/home/Документи"
+mkdir -p "$work/config" "$work/data" "$work/home/Документи" "$work/home/Pictures"
 echo "glide computer file $$" > "$work/home/Документи/glide-computer-file.txt"
 # Its own home folder, so the phone browses test files, not the user's.
-RUST_LOG=glide_phone=info HOME="$work/home" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" setsid dbus-run-session -- \
+RUST_LOG=glide_phone=info HOME="$work/home" XDG_PICTURES_DIR="$work/home/Pictures" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" setsid dbus-run-session -- \
   bash -c "echo \$DBUS_SESSION_BUS_ADDRESS > '$work/bus'; exec '$bin' --daemon" > "$work/daemon.log" 2>&1 &
 for _ in $(seq 50); do [ -s "$work/bus" ] && [ -s "$work/config/glide/phone.json" ] && break; sleep 0.2; done
 sleep 2
@@ -174,6 +174,15 @@ $adb shell cat /sdcard/Download/glide-computer-file.txt 2>/dev/null | grep -q "g
 $adb shell rm -f /sdcard/Download/glide-computer-file.txt
 $adb shell input keyevent KEYCODE_BACK
 echo "computer files: refused while off, then browsed and a file downloaded"
+
+# Glide only: a screenshot taken on the computer goes to the phone (once turned on).
+call SetSendScreenshots b true >/dev/null
+shot="glide-screenshot-$$.png"
+printf '\x89PNG\r\n\x1a\nglide screenshot %s' "$$" > "$work/home/Pictures/$shot"
+for _ in $(seq 40); do $adb shell ls "/sdcard/Download/$shot" >/dev/null 2>&1 && break; sleep 0.5; done
+$adb shell ls "/sdcard/Download/$shot" >/dev/null 2>&1 || fail "the computer's screenshot didn't reach the phone"
+$adb shell rm -f "/sdcard/Download/$shot"
+echo "computer screenshot reached the phone"
 
 # The computer's cursor goes over to the phone at the right edge and comes back.
 [ "$(call SetShareInputEdge s right)" = "b true" ] || fail "the edge strip can't be shown"

@@ -61,7 +61,9 @@ internal enum class DevicePlugin(
     WAKE_ON_LAN("Увімкнення комп’ютера", "Будити сплячий комп’ютер з телефона (лише Glide)",
         setOf(P.TYPE_GLIDE_WOL), emptySet()),
     COMPUTER_FILES("Файли комп’ютера", "Перегляд і завантаження файлів комп’ютера (лише Glide)",
-        setOf(P.TYPE_GLIDE_FILES), setOf(P.TYPE_GLIDE_FILES_REQUEST));
+        setOf(P.TYPE_GLIDE_FILES), setOf(P.TYPE_GLIDE_FILES_REQUEST)),
+    PHONE_ACTIONS("Дії телефону", "Комп’ютер блокує телефон, вмикає ліхтарик тощо (лише Glide)",
+        setOf(P.TYPE_RUNCOMMAND_REQUEST), setOf(P.TYPE_RUNCOMMAND));
 
     fun isEnabledByDefault(context: Context) = enabledByDefault(context)
 }

@@ -152,7 +152,12 @@ index="$($adb shell cmd media_session volume --stream 3 --get | grep -o 'volume 
 [ "$index" = 3 ] || fail "media volume on the phone is $index, expected 3 of 15 (20%)"
 before="$(media_volume)"
 # The phone's volume button (the first press only shows the volume panel).
-for _ in 1 2 3; do $adb shell input keyevent KEYCODE_VOLUME_UP; sleep 0.5; done
+# Pressed until the phone's own volume moves (the emulator sometimes only shows the panel).
+for _ in $(seq 8); do
+  $adb shell input keyevent KEYCODE_VOLUME_UP; sleep 0.6
+  now="$($adb shell cmd media_session volume --stream 3 --get | grep -o 'volume is [0-9]*' | grep -o '[0-9]*$')"
+  [ "$now" != "$index" ] && break
+done
 for _ in $(seq 20); do [ "$(media_volume)" != "$before" ] && break; sleep 0.5; done
 if [ "$(media_volume)" = "$before" ]; then
   echo "computer: $before; phone: $($adb shell cmd media_session volume --stream 3 --get | grep -o 'volume is [0-9]*')"
@@ -183,6 +188,22 @@ for _ in $(seq 40); do $adb shell ls "/sdcard/Download/$shot" >/dev/null 2>&1 &&
 $adb shell ls "/sdcard/Download/$shot" >/dev/null 2>&1 || fail "the computer's screenshot didn't reach the phone"
 $adb shell rm -f "/sdcard/Download/$shot"
 echo "computer screenshot reached the phone"
+
+# Glide only: the computer runs the phone's own actions (vibrate, then sound again).
+ringer() { $adb shell dumpsys audio | grep -m1 "mode (external)" | awk '{print $NF}'; }
+actions() { busctl --json=short --address="$(cat "$work/bus")" call org.glide.Phone /org/glide/Phone org.glide.Phone \
+  ListPhoneActionsJson | python3 -c "
+import json,sys
+print(' '.join(a['key'] for a in json.loads(json.load(sys.stdin)['data'][0]).get(sys.argv[1], [])))" "$phone"; }
+for _ in $(seq 20); do actions | grep -qw vibrate && break; sleep 0.5; done
+actions | grep -qw vibrate || fail "the phone's actions didn't arrive ($(actions))"
+call RunPhoneAction ss "$phone" vibrate >/dev/null
+for _ in $(seq 10); do [ "$(ringer)" = VIBRATE ] && break; sleep 0.5; done
+[ "$(ringer)" = VIBRATE ] || fail "the phone isn't on vibrate ($(ringer))"
+call RunPhoneAction ss "$phone" sound >/dev/null
+for _ in $(seq 10); do [ "$(ringer)" = NORMAL ] && break; sleep 0.5; done
+[ "$(ringer)" = NORMAL ] || fail "the phone's sound didn't come back ($(ringer))"
+echo "phone actions: $(actions); vibrate and sound run from the computer"
 
 # The computer's cursor goes over to the phone at the right edge and comes back.
 [ "$(call SetShareInputEdge s right)" = "b true" ] || fail "the edge strip can't be shown"

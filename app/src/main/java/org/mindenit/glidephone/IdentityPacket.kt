@@ -113,12 +113,14 @@ internal object IdentityPacket {
         ProtocolPackets.TYPE_SMS_REQUEST_CONVERSATION,
         ProtocolPackets.TYPE_PING,
         ProtocolPackets.TYPE_GLIDE_WOL,
-        ProtocolPackets.TYPE_GLIDE_FILES
+        ProtocolPackets.TYPE_GLIDE_FILES,
+        ProtocolPackets.TYPE_RUNCOMMAND_REQUEST
     )
 
     /** Packet types this phone may send. */
     val OUTGOING = listOf(
         ProtocolPackets.TYPE_GLIDE_FILES_REQUEST,
+        ProtocolPackets.TYPE_RUNCOMMAND,
         ProtocolPackets.TYPE_NOTIFICATION,
         ProtocolPackets.TYPE_NOTIFICATION_REQUEST,
         ProtocolPackets.TYPE_BATTERY,

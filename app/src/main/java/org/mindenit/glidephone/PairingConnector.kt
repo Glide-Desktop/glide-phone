@@ -791,6 +791,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 }
                 DevicePlugin.SFTP -> send(ProtocolPackets.sftp(JSONObject().put("serverRunning", false)))
                 DevicePlugin.VOLUME_RECEIVER -> runCatching { PhoneVolume.sinkListPacket(app)?.let(::send) }
+                DevicePlugin.PHONE_ACTIONS -> send(PhoneActions.listPacket())
                 DevicePlugin.SHARE -> if (ProtocolPackets.TYPE_SHARE_REQUEST in connection.pending.peer.incomingCapabilities) deliverQueuedUrls(id)
                 DevicePlugin.REMOTE_KEYBOARD -> if (RemoteInput.keyboardAvailable(app)) send(ProtocolPackets.keyboardState(true))
                 DevicePlugin.NOTIFICATIONS -> NotificationBridge.refresh()
@@ -940,6 +941,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
                 sendPacketTo(peerId, ProtocolPackets.contactsVcards(ContactsProvider.vcards(app, list.distinct(), selfId)))
             }
             ProtocolPackets.TYPE_TELEPHONY_REQUEST_MUTE -> TelephonyReporter.muteRinger(app)
+            ProtocolPackets.TYPE_RUNCOMMAND_REQUEST -> PhoneActions.handle(app, body)?.let { sendPacketTo(peerId, it) }
             ProtocolPackets.TYPE_GLIDE_FILES -> {
                 val list = body.optJSONArray("entries")
                 val entries = (0 until minOf(list?.length() ?: 0, 2000)).mapNotNull { i ->

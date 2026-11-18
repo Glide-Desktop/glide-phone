@@ -6,7 +6,7 @@
 # computer, and the computer's cursor going over to the phone and coming back.
 #
 # It clears the app's data, moves the real cursor for a few seconds (a virtual mouse pushes
-# it into the right screen edge) and holds host TCP ports 1739-1764 while it runs (adb
+# it into the right screen edge) and holds host TCP ports 1739-1750 while it runs (adb
 # forward, so the computer can fetch payloads from inside the emulator).
 set -euo pipefail
 bin="$(realpath "${1:?glide-phone binary}")"
@@ -74,7 +74,7 @@ echo "desktop $id on port $port"
 # The emulator can't hear broadcasts from the host: send our identity in, and let the
 # computer reach the phone's payload ports.
 $adb emu redir add udp:17160:1716 >/dev/null
-for p in $(seq 1739 1764); do $adb forward "tcp:$p" "tcp:$p" >/dev/null; done
+for p in $(seq 1739 1750); do $adb forward "tcp:$p" "tcp:$p" >/dev/null; done
 announce() {
   python3 - "$id" "$port" <<'PY'
 import json, socket, sys, time

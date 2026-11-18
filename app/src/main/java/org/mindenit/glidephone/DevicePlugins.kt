@@ -60,12 +60,15 @@ internal enum class DevicePlugin(
         setOf(P.TYPE_GLIDE_WOL), emptySet());
 
     fun isEnabledByDefault(context: Context) = enabledByDefault(context)
-
-    companion object {
-        private fun isTablet(context: Context): Boolean =
-            context.resources.configuration.screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK >= Configuration.SCREENLAYOUT_SIZE_LARGE
-    }
 }
+
+/**
+ * Top level on purpose: an enum constant's `::isTablet` in a companion object is bound to the
+ * companion while the enum is still being built, when the companion is null, and the first
+ * call (on every trusted link) threw a NullPointerException.
+ */
+private fun isTablet(context: Context): Boolean =
+    context.resources.configuration.screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK >= Configuration.SCREENLAYOUT_SIZE_LARGE
 
 internal class DevicePluginSettings(context: Context) {
     private val app = context.applicationContext

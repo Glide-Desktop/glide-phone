@@ -491,7 +491,8 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
             runCatching { trusted.recordProtocolVersion(id, handshake.peer.version, handshake.peer.name, handshake.peer.type) }
             runCatching { handshake.socket.inetAddress?.hostAddress?.let { trusted.recordAddress(id, it) } }
             maintainConnection(handshake, trusted, identity)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.i(LOG_TAG, "link with ${handshake.peer.id} closed: ${e.javaClass.simpleName}: ${e.message}")
             runCatching { handshake.socket.close() }
         }
     }
@@ -730,8 +731,10 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         NotificationBridge.attach(this)
         emit(Event.Connected(id, name))
         greetPeer(connection)
+        android.util.Log.i(LOG_TAG, "connected to $id")
         try {
             connection.run { !closed.get() && connections[id] === connection }
+            android.util.Log.i(LOG_TAG, "link with $id ended (closed=${closed.get()}, replaced=${connections[id] !== connection})")
         } finally {
             runCatching { handshake.socket.close() }
             if (connections.remove(id, connection)) {
@@ -1675,6 +1678,7 @@ internal class PairingConnector(context: Context, private val onEvent: (Event) -
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val DIAL_INTERVAL_MS = 3_000L
         const val MAX_DIALS = 8
+        const val LOG_TAG = "GlideLink"
         const val MAX_PLAYERS = 32
         const val MAX_REFUSED = 32
         const val RATE_LIMIT_MS = 1_000L
